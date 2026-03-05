@@ -383,3 +383,81 @@ kernel void narrowphase_gjk_epa(
     }
 }
 
+// ----------------------------------------------------
+// XPBD SOLVER: POSITION-BASED DYNAMICS
+// ----------------------------------------------------
+
+kernel void xpbd_solve_contacts(
+    device Position* positions [[buffer(0)]],
+    device Mass* masses [[buffer(1)]],
+    device ContactManifold* manifolds [[buffer(2)]],
+    constant float& dt_sub [[buffer(3)]],
+    constant uint& pairs_count [[buffer(4)]],
+    uint id [[thread_position_in_grid]]
+) {
+    if (id >= pairs_count) return;
+    
+    // We execute one constraint per thread. 
+    // In a fully robust engine, thread coloring or atomic positional additions
+    // must be used to prevent race-conditions on positions[] writes if 
+    // multiple constraints affect the same ID. 
+    // (This acts as atomic-less parallel Jacobi for scaffolding).
+    
+    ContactManifold manifold = manifolds[id];
+    if (!manifold.active) return;
+    
+    uint id_a = manifold.entity_a;
+    uint id_b = manifold.entity_b;
+    
+    float w_a = masses[id_a].inv_mass;
+    float w_b = masses[id_b].inv_mass;
+    
+    float w_sum = w_a + w_b;
+    if (w_sum <= 0.0) return; // Both static
+    
+    // 1. Evaluate Constraint C(x) = depth 
+    // (The distance the shapes are overlapping)
+    float C = manifold.depth;
+    
+    if (C <= 0.0) return; // No penetration
+    
+    // 2. XPBD Compliance (alpha = inverse stiffness)
+    // For pure rigid contacts, alpha is 0. 
+    float alpha = 0.0;
+    
+    // 3. Lagrange Multiplier update (Delta Lambda)
+    // dl = -C / (w_sum + alpha / dt^2)
+    float dt_sq = dt_sub * dt_sub;
+    float d_lambda = -C / (w_sum + alpha / dt_sq);
+    
+    // 4. Positional correction impulse P = Delta Lambda * Normal
+    float3 P = d_lambda * manifold.normal;
+    
+    // 5. Apply corrections proportional to inverse mass
+    // Warning: requires atomic_fetch_add on floats for true robustness in production
+    // metal 3.0 supports atomic<float>, but for scaffolding we naive-write:
+    
+    positions[id_a].predicted += P * w_a;
+    positions[id_b].predicted -= P * w_b;
+}
+
+// ----------------------------------------------------
+// VELOCITY DERIVATION
+// ----------------------------------------------------
+
+kernel void xpbd_velocity_update(
+    device Position* positions [[buffer(0)]],
+    device Velocity* velocities [[buffer(1)]],
+    constant float& delta_time [[buffer(2)]],
+    constant uint& entity_count [[buffer(3)]],
+    uint id [[thread_position_in_grid]]
+) {
+    if (id >= entity_count) return;
+    
+    // V = (P_new - P_old) / dt
+    velocities[id].current = (positions[id].predicted - positions[id].current) / delta_time;
+    
+    // Advance position
+    positions[id].current = positions[id].predicted;
+}
+

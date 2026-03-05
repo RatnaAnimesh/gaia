@@ -20,6 +20,8 @@ pub struct MetalContext {
     pub build_hash_pipeline: ComputePipelineState,
     pub find_pairs_pipeline: ComputePipelineState,
     pub narrowphase_pipeline: ComputePipelineState,
+    pub xpbd_solve_pipeline: ComputePipelineState,
+    pub xpbd_velocity_pipeline: ComputePipelineState,
 }
 
 impl MetalContext {
@@ -39,6 +41,9 @@ impl MetalContext {
         let find_pairs_pipeline = Self::build_pipeline(&device, &library, "find_broadphase_pairs")?;
         let narrowphase_pipeline = Self::build_pipeline(&device, &library, "narrowphase_gjk_epa")?;
         
+        let xpbd_solve_pipeline = Self::build_pipeline(&device, &library, "xpbd_solve_contacts")?;
+        let xpbd_velocity_pipeline = Self::build_pipeline(&device, &library, "xpbd_velocity_update")?;
+        
         println!("Initialized Metal Device: {}", device.name());
         
         Ok(Self {
@@ -49,6 +54,8 @@ impl MetalContext {
             build_hash_pipeline,
             find_pairs_pipeline,
             narrowphase_pipeline,
+            xpbd_solve_pipeline,
+            xpbd_velocity_pipeline,
         })
     }
     
