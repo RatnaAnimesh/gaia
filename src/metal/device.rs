@@ -19,6 +19,7 @@ pub struct MetalContext {
     pub clear_hash_pipeline: ComputePipelineState,
     pub build_hash_pipeline: ComputePipelineState,
     pub find_pairs_pipeline: ComputePipelineState,
+    pub narrowphase_pipeline: ComputePipelineState,
 }
 
 impl MetalContext {
@@ -36,6 +37,7 @@ impl MetalContext {
         let clear_hash_pipeline = Self::build_pipeline(&device, &library, "clear_spatial_hash")?;
         let build_hash_pipeline = Self::build_pipeline(&device, &library, "build_spatial_hash")?;
         let find_pairs_pipeline = Self::build_pipeline(&device, &library, "find_broadphase_pairs")?;
+        let narrowphase_pipeline = Self::build_pipeline(&device, &library, "narrowphase_gjk_epa")?;
         
         println!("Initialized Metal Device: {}", device.name());
         
@@ -46,6 +48,7 @@ impl MetalContext {
             clear_hash_pipeline,
             build_hash_pipeline,
             find_pairs_pipeline,
+            narrowphase_pipeline,
         })
     }
     
