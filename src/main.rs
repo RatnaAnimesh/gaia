@@ -1,193 +1,217 @@
 use macroquad::prelude::*;
+use egui_macroquad::egui;
 
 pub mod core;
-// pub mod metal; // Metal compute shaders are bypassed for this visual proof to avoid compilation hangs
+pub mod editor;
+pub mod ui;
 
-#[macroquad::main("Gaia Physics Engine")]
-async fn main() {
-    let delta_time: f32 = 0.016;
-            
-    // Set up initial conditions
-    let mut positions = vec![
-        glam::Vec3A::new(0.0, 10.0, 0.0),
-        glam::Vec3A::new(0.0, 0.0, 0.0)
-    ];
-    let mut predicted_pos = positions.clone();
-    let mut velocities = vec![
-        glam::Vec3A::new(0.0, 0.0, 0.0),
-        glam::Vec3A::new(0.0, 0.0, 0.0)
-    ];
-    let masses = vec![1.0_f32, 0.0_f32]; // inv_mass
-    
-    // Extents for static floor vs falling box
-    let extents = vec![
-        glam::Vec3A::new(1.0, 1.0, 1.0),
-        glam::Vec3A::new(10.0, 1.0, 10.0)
-    ];
-    
-    let entity_count = 2;
-    
-    // Soft Body Scaffolding
-    // ----------------------------------------------------
-    let mut soft_body = core::soft_body::MatrixFreeSoftBody::new(100.0, 500.0);
-    soft_body.particles.push(vec3(-2.0, 10.0, 0.0));
-    soft_body.particles.push(vec3(2.0, 10.0, 0.0));
-    soft_body.particles.push(vec3(0.0, 10.0, -2.0));
-    soft_body.particles.push(vec3(0.0, 14.0, 0.0));
-    
-    for _ in 0..4 {
-        soft_body.velocities.push(Vec3::ZERO);
-        soft_body.masses.push(0.5);
-    }
-    
-    let d_m = Mat3::from_cols(
-        soft_body.particles[1] - soft_body.particles[0],
-        soft_body.particles[2] - soft_body.particles[0],
-        soft_body.particles[3] - soft_body.particles[0],
-    );
-    let inv_rest = d_m.inverse();
-    let vol = d_m.determinant().abs() / 6.0;
-    
-    soft_body.elements.push(core::soft_body::Tetrahedron {
-        v0: 0, v1: 1, v2: 2, v3: 3,
-        inv_rest_shape: inv_rest,
-        volume: vol,
-    });
-    // ----------------------------------------------------
-    
-    // ----------------------------------------------------
-    // Fluid Simulation (Chebyshev-Preconditioned)
-    // ----------------------------------------------------
-    let fluid_res = 16usize;
-    let mut fluid = core::fluid::FluidGrid::new(fluid_res, fluid_res, fluid_res, 0.5);
-    // Seed an upward splash at the center
-    fluid.add_impulse(fluid_res / 2, 2, fluid_res / 2, 5.0);
-    // ----------------------------------------------------
+use editor::EditorState;
+use ui::{apply_blender_theme, draw_menu_bar, draw_toolbar, draw_right_panels, draw_status_bar};
+use core::soft_body::{MatrixFreeSoftBody, Tetrahedron};
+use core::fluid::FluidGrid;
+use core::light::HamiltonianPropagator;
+use core::deq::DeqSolver;
 
-    // ----------------------------------------------------
-    // Hamiltonian Wavefront Light Transport (Phase 10)
-    // ----------------------------------------------------
-    let mut light_propagator = core::light::HamiltonianPropagator::new(64, 64);
-    let light_pos = [0.0f32, 18.0, 0.0];
-    light_propagator.emit_from_point(light_pos, 64, [1.0, 0.9, 0.6]);
-    // ----------------------------------------------------
-
-    loop {
-        clear_background(LIGHTGRAY);
-
-        // Substepping or fixed delta time
-        let mut sim_dt = get_frame_time();
-        if sim_dt > 0.1 { sim_dt = 0.1; } // cap dt
-
-        // We run a fixed step for stability
-        let step_time = 0.016;
-
-        // Pre-integration (Gravity application)
-        for i in 0..entity_count {
-            if masses[i] > 0.0 {
-                // v = v + g * dt
-                velocities[i].y -= 9.81 * step_time;
-                // p_pred = p_cur + v * dt
-                predicted_pos[i].x = positions[i].x + velocities[i].x * step_time;
-                predicted_pos[i].y = positions[i].y + velocities[i].y * step_time;
-                predicted_pos[i].z = positions[i].z + velocities[i].z * step_time;
-            }
-        }
-        
-        // 5. DEQ Constraint Solver (Neural Fixed Point)
-        let mut p_a = predicted_pos[0];
-        let p_b = predicted_pos[1];
-        
-        let a_min = p_a - extents[0];
-        let a_max = p_a + extents[0];
-        let b_min = p_b - extents[1];
-        let b_max = p_b + extents[1];
-        
-        let overlap = (a_min.x <= b_max.x && a_max.x >= b_min.x) &&
-                      (a_min.y <= b_max.y && a_max.y >= b_min.y) &&
-                      (a_min.z <= b_max.z && a_max.z >= b_min.z);
-                      
-        if overlap {
-            // Feed the collision depth into the Deep Equilibrium Model
-            let depth = b_max.y - a_min.y;
-            let x_features = vec![depth * 0.2]; // Scale features down for stability
-            
-            // The DEQ solves the LCP matrix equation in O(1) bound iterations
-            let solver = core::deq::DeqSolver::new(20, 0.001, 1);
-            let z_star = solver.forward_solve(&x_features);
-            
-            // Apply the inferred position shift (impulse lambda)
-            p_a.y += z_star[0];
-            predicted_pos[0] = p_a;
-        }
-        
-        // 6. Velocity Derivation
-        for i in 0..entity_count {
-            if masses[i] > 0.0 {
-                velocities[i] = (predicted_pos[i] - positions[i]) / step_time;
-                positions[i] = predicted_pos[i];
-            }
-        }
-
-        // --- Step the Soft Body ---
-        soft_body.step(step_time);
-        
-        // --- Step the Fluid ---
-        fluid.step(step_time);
-
-        // --- Propagate Light Wavefronts ---
-        light_propagator.propagate(2); // 2 steps per frame = real-time
-        // Re-seed light if all absorbed
-        if light_propagator.wavefronts.is_empty() {
-            light_propagator.emit_from_point(light_pos, 64, [1.0, 0.9, 0.6]);
-        }
-
-        set_camera(&Camera3D {
-            position: vec3(0.0, 10.0, 25.0),
-            up: vec3(0.0, 1.0, 0.0),
-            target: vec3(0.0, 2.0, 0.0),
-            ..Default::default()
-        });
-
-        draw_grid(20, 1.0, BLACK, GRAY);
-
-        // Draw entities
-        // Object 0: Falling box (Rigid DEQ)
-        draw_cube(vec3(positions[0].x, positions[0].y, positions[0].z), vec3(extents[0].x*2.0, extents[0].y*2.0, extents[0].z*2.0), None, RED);
-        draw_cube_wires(vec3(positions[0].x, positions[0].y, positions[0].z), vec3(extents[0].x*2.0, extents[0].y*2.0, extents[0].z*2.0), BLACK);
-        
-        // Object 1: Static floor
-        draw_cube(vec3(positions[1].x, positions[1].y, positions[1].z), vec3(extents[1].x*2.0, extents[1].y*2.0, extents[1].z*2.0), None, DARKGREEN);
-        draw_cube_wires(vec3(positions[1].x, positions[1].y, positions[1].z), vec3(extents[1].x*2.0, extents[1].y*2.0, extents[1].z*2.0), BLACK);
-
-        // Soft Body: Draw Jello Tetrahedron
-        for tet in &soft_body.elements {
-            let p0 = soft_body.particles[tet.v0];
-            let p1 = soft_body.particles[tet.v1];
-            let p2 = soft_body.particles[tet.v2];
-            let p3 = soft_body.particles[tet.v3];
-            
-            draw_line_3d(vec3(p0.x, p0.y, p0.z), vec3(p1.x, p1.y, p1.z), BLUE);
-            draw_line_3d(vec3(p0.x, p0.y, p0.z), vec3(p2.x, p2.y, p2.z), BLUE);
-            draw_line_3d(vec3(p1.x, p1.y, p1.z), vec3(p2.x, p2.y, p2.z), BLUE);
-            draw_line_3d(vec3(p3.x, p3.y, p3.z), vec3(p0.x, p0.y, p0.z), BLUE);
-            draw_line_3d(vec3(p3.x, p3.y, p3.z), vec3(p1.x, p1.y, p1.z), BLUE);
-            draw_line_3d(vec3(p3.x, p3.y, p3.z), vec3(p2.x, p2.y, p2.z), BLUE);
-        }
-
-        // Render active wavefronts as tiny yellow points
-        for wf in &light_propagator.wavefronts {
-            draw_sphere(vec3(wf.x[0], wf.x[1], wf.x[2]), 0.1, None, YELLOW);
-        }
-
-        set_default_camera();
-        draw_text("Gaia Physics Engine - Macroquad Frontend", 10.0, 20.0, 30.0, BLACK);
-        draw_text(&format!("FPS: {}", get_fps()), 10.0, 50.0, 20.0, BLACK);
-        draw_text(&format!("Cube Y: {:.3}", positions[0].y), 10.0, 80.0, 20.0, BLACK);
-        draw_text(&format!("Soft Body Particles: {}", soft_body.particles.len()), 10.0, 110.0, 20.0, BLUE);
-        draw_text("Fluid: Chebyshev PCG (8 iters, no global sync)", 10.0, 140.0, 18.0, DARKBLUE);
-
-        next_frame().await
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Gaia — Physics Engine & Editor".to_string(),
+        window_width: 1400,
+        window_height: 900,
+        high_dpi: true,
+        ..Default::default()
     }
 }
 
+#[macroquad::main(window_conf)]
+async fn main() {
+    let mut state = EditorState::new();
+
+    // ── Physics backends ───────────────────────────────────────
+    // Rigid body simulation (positions driven by DEQ)
+    let mut rb_pos   = vec![Vec3::new(0.0, 8.0, 0.0)];
+    let mut rb_vel   = vec![Vec3::ZERO];
+    let rb_extents   = vec![Vec3::new(1.0, 1.0, 1.0)];
+    let floor_pos    = Vec3::new(0.0, -1.0, 0.0);
+    let floor_ext    = Vec3::new(10.0, 1.0, 10.0);
+
+    // Soft body
+    let mut soft = MatrixFreeSoftBody::new(80.0, 400.0);
+    soft.particles.push(vec3(-5.0, 10.0, 0.0));
+    soft.particles.push(vec3(-3.0, 10.0, 0.0));
+    soft.particles.push(vec3(-4.0, 10.0, -2.0));
+    soft.particles.push(vec3(-4.0, 13.0, 0.0));
+    for _ in 0..4 { soft.velocities.push(Vec3::ZERO); soft.masses.push(0.5); }
+    let dm = Mat3::from_cols(
+        soft.particles[1] - soft.particles[0],
+        soft.particles[2] - soft.particles[0],
+        soft.particles[3] - soft.particles[0],
+    );
+    let inv_dm = dm.inverse();
+    let vol    = dm.determinant().abs() / 6.0;
+    soft.elements.push(Tetrahedron { v0: 0, v1: 1, v2: 2, v3: 3, inv_rest_shape: inv_dm, volume: vol });
+
+    // Fluid
+    let fluid_res = 16usize;
+    let mut fluid = FluidGrid::new(fluid_res, fluid_res, fluid_res, 0.5);
+    fluid.add_impulse(fluid_res / 2, 2, fluid_res / 2, 5.0);
+
+    // Light
+    let mut light = HamiltonianPropagator::new(64, 64);
+    let lp = [0.0f32, 18.0, 0.0];
+    light.emit_from_point(lp, 64, [1.0, 0.9, 0.6]);
+    // ──────────────────────────────────────────────────────────
+
+    let dt = 0.016_f32; // fixed physics step
+
+    loop {
+        // ── Input & Camera ────────────────────────────────────
+        state.camera.update();
+
+        // Keyboard tool shortcuts (only when egui doesn't want keyboard)
+        if is_key_pressed(KeyCode::Q) { state.active_tool = editor::ActiveTool::Select; }
+        if is_key_pressed(KeyCode::G) { state.active_tool = editor::ActiveTool::Move;   }
+        if is_key_pressed(KeyCode::R) { state.active_tool = editor::ActiveTool::Rotate; }
+        if is_key_pressed(KeyCode::S) { state.active_tool = editor::ActiveTool::Scale;  }
+        if is_key_pressed(KeyCode::Space) { state.simulation_playing = !state.simulation_playing; }
+
+        // ── Physics step ──────────────────────────────────────
+        if state.simulation_playing {
+            state.frame += 1;
+
+            // Rigid body: gravity + DEQ floor constraint
+            for (i, pos) in rb_pos.iter_mut().enumerate() {
+                rb_vel[i].y -= 9.81 * dt;
+                *pos += rb_vel[i] * dt;
+
+                // DEQ constraint with floor
+                let a_min = *pos - rb_extents[i];
+                let a_max = *pos + rb_extents[i];
+                let b_min = floor_pos - floor_ext;
+                let b_max = floor_pos + floor_ext;
+
+                if a_min.x <= b_max.x && a_max.x >= b_min.x
+                    && a_min.y <= b_max.y && a_max.y >= b_min.y
+                    && a_min.z <= b_max.z && a_max.z >= b_min.z
+                {
+                    let depth = b_max.y - a_min.y;
+                    let solver = DeqSolver::new(20, 0.001, 1);
+                    let z_star = solver.forward_solve(&[depth * 0.2]);
+                    pos.y    += z_star[0];
+                    rb_vel[i].y = rb_vel[i].y.max(0.0);
+                }
+            }
+
+            // Sync rigid body positions to EditorState
+            if let Some(obj) = state.objects.get_mut(0) {
+                obj.position = rb_pos[0];
+            }
+
+            // Soft body
+            soft.step(dt);
+            // Sync soft body centroid
+            if soft.particles.len() >= 4 {
+                let ctr = (soft.particles[0] + soft.particles[1] + soft.particles[2] + soft.particles[3]) / 4.0;
+                if let Some(obj) = state.objects.get_mut(2) { obj.position = ctr; }
+            }
+
+            // Fluid + light
+            fluid.step(dt);
+            light.propagate(2);
+            if light.wavefronts.is_empty() {
+                light.emit_from_point(lp, 64, [1.0, 0.9, 0.6]);
+            }
+        }
+
+        // ── Rendering ─────────────────────────────────────────
+        clear_background(Color::from_rgba(30, 30, 30, 255));
+
+        // 3D Viewport
+        set_camera(&state.camera.to_camera3d());
+
+        if state.show_grid {
+            draw_grid(30, 1.0, Color::from_rgba(80, 80, 80, 255), Color::from_rgba(55, 55, 55, 255));
+        }
+
+        // Floor
+        draw_cube(floor_pos, floor_ext * 2.0, None, Color::from_rgba(60, 90, 60, 255));
+        if state.show_wireframe {
+            draw_cube_wires(floor_pos, floor_ext * 2.0, Color::from_rgba(80, 80, 80, 255));
+        }
+
+        // Scene objects
+        for (i, obj) in state.objects.iter().enumerate() {
+            if !obj.visible { continue; }
+            let is_selected = state.selected == Some(i);
+            let col = if is_selected {
+                Color::from_rgba(255, 165, 0, 255) // orange highlight like Blender
+            } else {
+                obj.color
+            };
+
+            match obj.physics_type {
+                editor::PhysicsType::Rigid => {
+                    if i < rb_pos.len() {
+                        let ext = rb_extents[0] * obj.scale;
+                        draw_cube(rb_pos[i], ext * 2.0, None, col);
+                        draw_cube_wires(rb_pos[i], ext * 2.0, WHITE);
+                    }
+                }
+                editor::PhysicsType::SoftBody => {
+                    // Draw FEM tetrahedron wireframe
+                    for tet in &soft.elements {
+                        let p = [
+                            soft.particles[tet.v0],
+                            soft.particles[tet.v1],
+                            soft.particles[tet.v2],
+                            soft.particles[tet.v3],
+                        ];
+                        let c = if is_selected { Color::from_rgba(255, 165, 0, 255) } else { BLUE };
+                        draw_line_3d(p[0], p[1], c);
+                        draw_line_3d(p[0], p[2], c);
+                        draw_line_3d(p[1], p[2], c);
+                        draw_line_3d(p[3], p[0], c);
+                        draw_line_3d(p[3], p[1], c);
+                        draw_line_3d(p[3], p[2], c);
+                    }
+                    // Render each vertex as a small sphere
+                    for p in &soft.particles {
+                        draw_sphere(*p, 0.18, None, col);
+                    }
+                }
+                editor::PhysicsType::Static => {
+                    // Point Light representation
+                    draw_sphere(obj.position, 0.3, None, col);
+                    // Light rays
+                    for wf in &light.wavefronts {
+                        draw_sphere(vec3(wf.x[0], wf.x[1], wf.x[2]), 0.08, None, Color::new(1.0, 0.95, 0.5, 0.6));
+                    }
+                }
+                editor::PhysicsType::Fluid => {
+                    draw_cube(obj.position, Vec3::new(4.0, 4.0, 4.0), None, Color::new(0.3, 0.7, 1.0, 0.3));
+                    draw_cube_wires(obj.position, Vec3::new(4.0, 4.0, 4.0), SKYBLUE);
+                }
+            }
+        }
+
+        // Selection bounding box highlight (orange outline)
+        if let Some(idx) = state.selected {
+            if let Some(obj) = state.objects.get(idx) {
+                draw_cube_wires(obj.position, obj.scale * 2.1, Color::from_rgba(255, 140, 0, 255));
+            }
+        }
+
+        set_default_camera();
+
+        // ── egui UI Panels ────────────────────────────────────
+        egui_macroquad::ui(|ctx| {
+            apply_blender_theme(ctx);
+            draw_menu_bar(ctx, &mut state);
+            draw_status_bar(ctx, &state, get_fps());
+            draw_toolbar(ctx, &mut state);
+            draw_right_panels(ctx, &mut state);
+        });
+        egui_macroquad::draw();
+
+        next_frame().await;
+    }
+}

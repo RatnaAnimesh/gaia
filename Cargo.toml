@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
+egui-macroquad = "0.17.3"
 glam = "0.32.0"
 hecs = "0.11.0"
 macroquad = "0.4.14"
