@@ -64,6 +64,14 @@ async fn main() {
     fluid.add_impulse(fluid_res / 2, 2, fluid_res / 2, 5.0);
     // ----------------------------------------------------
 
+    // ----------------------------------------------------
+    // Hamiltonian Wavefront Light Transport (Phase 10)
+    // ----------------------------------------------------
+    let mut light_propagator = core::light::HamiltonianPropagator::new(64, 64);
+    let light_pos = [0.0f32, 18.0, 0.0];
+    light_propagator.emit_from_point(light_pos, 64, [1.0, 0.9, 0.6]);
+    // ----------------------------------------------------
+
     loop {
         clear_background(LIGHTGRAY);
 
@@ -127,6 +135,13 @@ async fn main() {
         // --- Step the Fluid ---
         fluid.step(step_time);
 
+        // --- Propagate Light Wavefronts ---
+        light_propagator.propagate(2); // 2 steps per frame = real-time
+        // Re-seed light if all absorbed
+        if light_propagator.wavefronts.is_empty() {
+            light_propagator.emit_from_point(light_pos, 64, [1.0, 0.9, 0.6]);
+        }
+
         set_camera(&Camera3D {
             position: vec3(0.0, 10.0, 25.0),
             up: vec3(0.0, 1.0, 0.0),
@@ -158,6 +173,11 @@ async fn main() {
             draw_line_3d(vec3(p3.x, p3.y, p3.z), vec3(p0.x, p0.y, p0.z), BLUE);
             draw_line_3d(vec3(p3.x, p3.y, p3.z), vec3(p1.x, p1.y, p1.z), BLUE);
             draw_line_3d(vec3(p3.x, p3.y, p3.z), vec3(p2.x, p2.y, p2.z), BLUE);
+        }
+
+        // Render active wavefronts as tiny yellow points
+        for wf in &light_propagator.wavefronts {
+            draw_sphere(vec3(wf.x[0], wf.x[1], wf.x[2]), 0.1, None, YELLOW);
         }
 
         set_default_camera();
