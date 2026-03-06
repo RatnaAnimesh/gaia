@@ -49,7 +49,7 @@ async fn main() {
             }
         }
         
-        // 5. XPBD Constraint Solver (CPU Port)
+        // 5. DEQ Constraint Solver (Neural Fixed Point)
         let mut p_a = predicted_pos[0];
         let p_b = predicted_pos[1];
         
@@ -63,8 +63,16 @@ async fn main() {
                       (a_min.z <= b_max.z && a_max.z >= b_min.z);
                       
         if overlap {
+            // Feed the collision depth into the Deep Equilibrium Model
             let depth = b_max.y - a_min.y;
-            p_a.y += depth; // Push the box up out of the floor
+            let x_features = vec![depth * 0.2]; // Scale features down for stability
+            
+            // The DEQ solves the LCP matrix equation in O(1) bound iterations
+            let solver = core::deq::DeqSolver::new(20, 0.001, 1);
+            let z_star = solver.forward_solve(&x_features);
+            
+            // Apply the inferred position shift (impulse lambda)
+            p_a.y += z_star[0];
             predicted_pos[0] = p_a;
         }
         
