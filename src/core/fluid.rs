@@ -11,6 +11,9 @@
 ///   x_{k+1} = x_k + omega_k (b - A x_k) + beta_k (x_k - x_{k-1})
 /// where omega and beta are precomputed from the eigenvalue bounds [lambda_min, lambda_max].
 /// No dot products needed => zero global thread synchronization!
+/// Rayon is used to run each cell's update across all CPU cores.
+
+use rayon::prelude::*;
 
 pub struct FluidGrid {
     pub width: usize,
@@ -56,22 +59,29 @@ impl FluidGrid {
     /// Compute the divergence of the velocity field: div(u) at each cell.
     /// This is the RHS of the Poisson equation: nabla^2 p = rho/dt * div(u*)
     pub fn compute_divergence(&mut self, dt: f32) {
-        let inv_h = 1.0 / self.cell_size;
-        let scale = self.density / dt;
+        let inv_h  = 1.0 / self.cell_size;
+        let scale  = self.density / dt;
+        let w = self.width;
+        let h = self.height;
+        let d = self.depth;
+        let vx = &self.vel_x;
+        let vy = &self.vel_y;
+        let vz = &self.vel_z;
 
-        for z in 1..self.depth - 1 {
-            for y in 1..self.height - 1 {
-                for x in 1..self.width - 1 {
-                    let i = self.idx(x, y, z);
-                    let div_u = (self.vel_x[self.idx(x + 1, y, z)] - self.vel_x[i]
-                        + self.vel_y[self.idx(x, y + 1, z)] - self.vel_y[i]
-                        + self.vel_z[self.idx(x, y, z + 1)] - self.vel_z[i])
-                        * inv_h;
-
-                    self.divergence[i] = -scale * div_u;
+        self.divergence
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, div_cell)| {
+                let z = i / (w * h);
+                let y = (i / w) % h;
+                let x = i % w;
+                if x == 0 || y == 0 || z == 0 || x >= w - 1 || y >= h - 1 || z >= d - 1 {
+                    *div_cell = 0.0;
+                    return;
                 }
-            }
-        }
+                let div_u = (vx[i + 1] - vx[i] + vy[i + w] - vy[i] + vz[i + w * h] - vz[i]) * inv_h;
+                *div_cell = -scale * div_u;
+            });
     }
 
     /// Applies the discrete Laplacian operator A*x for a cell (used in PCG/Chebyshev).
@@ -147,18 +157,37 @@ impl FluidGrid {
 
         self.pressure = p_curr;
 
-        // Project velocity: u = u* - dt/rho * grad(p)
-        let scale = dt / (self.density * self.cell_size);
-        for z in 1..self.depth - 1 {
-            for y in 1..self.height - 1 {
-                for x in 1..self.width - 1 {
-                    let i = self.idx(x, y, z);
-                    self.vel_x[i] -= scale * (self.pressure[self.idx(x + 1, y, z)] - self.pressure[i]);
-                    self.vel_y[i] -= scale * (self.pressure[self.idx(x, y + 1, z)] - self.pressure[i]);
-                    self.vel_z[i] -= scale * (self.pressure[self.idx(x, y, z + 1)] - self.pressure[i]);
-                }
-            }
-        }
+        // PARALLEL velocity projection: u = u* - dt/rho * grad(p)
+        let scale   = dt / (self.density * self.cell_size);
+        let w       = self.width;
+        let h       = self.height;
+        let d       = self.depth;
+        let pressure = self.pressure.clone(); // read-only snapshot
+
+        self.vel_x
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, vx)| {
+                let z = i / (w * h); let y = (i / w) % h; let x = i % w;
+                if x == 0 || y == 0 || z == 0 || x >= w - 1 || y >= h - 1 || z >= d - 1 { return; }
+                *vx -= scale * (pressure[i + 1] - pressure[i]);
+            });
+        self.vel_y
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, vy)| {
+                let z = i / (w * h); let y = (i / w) % h; let x = i % w;
+                if x == 0 || y == 0 || z == 0 || x >= w - 1 || y >= h - 1 || z >= d - 1 { return; }
+                *vy -= scale * (pressure[i + w] - pressure[i]);
+            });
+        self.vel_z
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, vz)| {
+                let z = i / (w * h); let y = (i / w) % h; let x = i % w;
+                if x == 0 || y == 0 || z == 0 || x >= w - 1 || y >= h - 1 || z >= d - 1 { return; }
+                *vz -= scale * (pressure[i + w * h] - pressure[i]);
+            });
     }
 
     /// Advect velocity field using semi-Lagrangian method.
@@ -201,9 +230,8 @@ impl FluidGrid {
 
     /// Apply gravity to the Y velocity component.
     pub fn apply_gravity(&mut self, dt: f32) {
-        for v in &mut self.vel_y {
-            *v -= 9.81 * dt;
-        }
+        // Parallel gravity application: every cell is independent
+        self.vel_y.par_iter_mut().for_each(|v| *v -= 9.81 * dt);
     }
 
     /// Seeding an upward splash impulse at the center of the grid.

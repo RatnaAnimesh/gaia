@@ -1,4 +1,5 @@
 use macroquad::math::{Mat3, Vec3};
+use rayon::prelude::*;
 
 /// Represents a single tetrahedral element in a soft body mesh.
 pub struct Tetrahedron {
@@ -36,47 +37,49 @@ impl MatrixFreeSoftBody {
         }
     }
 
-    /// Computes $\mathbf{K} \Delta \mathbf{v}$ inherently on the fly via tensor contractions
-    /// rather than assembling a sparse matrix $\mathbf{K}$.
+    /// PARALLEL force computation via rayon parallel fold.
+    /// Each tet's contribution is independent — no data races.
+    /// Forces are reduced into a per-particle accumulator using atomic-free fold.
     pub fn compute_forces(&self) -> Vec<Vec3> {
-        let mut forces = vec![Vec3::ZERO; self.particles.len()];
+        let n = self.particles.len();
 
-        for tet in &self.elements {
-            let x0 = self.particles[tet.v0];
-            let x1 = self.particles[tet.v1];
-            let x2 = self.particles[tet.v2];
-            let x3 = self.particles[tet.v3];
+        // Each rayon thread produces its own local force Vec, then we sum them.
+        let partial_forces: Vec<Vec<Vec3>> = self.elements
+            .par_iter()
+            .map(|tet| {
+                let mut local = vec![Vec3::ZERO; n];
+                let x0 = self.particles[tet.v0];
+                let x1 = self.particles[tet.v1];
+                let x2 = self.particles[tet.v2];
+                let x3 = self.particles[tet.v3];
 
-            // Current shape matrix $\mathbf{D}_s$
-            let ds = Mat3::from_cols(x1 - x0, x2 - x0, x3 - x0);
-            
-            // Deformation Gradient $\mathbf{F} = \mathbf{D}_s \mathbf{D}_m^{-1}$
-            let f = ds * tet.inv_rest_shape;
-            
-            // J = det(F) represents volume change
-            let j = f.determinant();
-            if j <= 0.0 { continue; } // Skip inverted elements
-            
-            // Neo-Hookean First Piola-Kirchhoff Stress Tensor $\mathbf{P}$
-            // P = mu (F - F^{-T}) + lambda * ln(J) * F^{-T}
-            let f_inv_t = f.inverse().transpose();
-            let p_stress = f * self.mu - f_inv_t * (self.mu - self.lambda * j.ln());
+                let ds = Mat3::from_cols(x1 - x0, x2 - x0, x3 - x0);
+                let f  = ds * tet.inv_rest_shape;
+                let j  = f.determinant();
+                if j <= 0.0 { return local; }
 
-            // Tensor contraction $\mathbf{H} = -V_0 \mathbf{P} \mathbf{D}_m^{-T}$
-            let h = p_stress * tet.inv_rest_shape.transpose() * (-tet.volume);
-            
-            let f1 = h.col(0);
-            let f2 = h.col(1);
-            let f3 = h.col(2);
-            let f0 = -(f1 + f2 + f3);
+                let f_inv_t  = f.inverse().transpose();
+                let p_stress = f * self.mu - f_inv_t * (self.mu - self.lambda * j.ln());
+                let h        = p_stress * tet.inv_rest_shape.transpose() * (-tet.volume);
 
-            // Matrix-Free Force Accumulation
-            forces[tet.v0] += f0;
-            forces[tet.v1] += f1;
-            forces[tet.v2] += f2;
-            forces[tet.v3] += f3;
+                let f1 = h.col(0); let f2 = h.col(1); let f3 = h.col(2);
+                let f0 = -(f1 + f2 + f3);
+
+                local[tet.v0] = f0;
+                local[tet.v1] = f1;
+                local[tet.v2] = f2;
+                local[tet.v3] = f3;
+                local
+            })
+            .collect();
+
+        // Sum all partial force vecs into one
+        let mut forces = vec![Vec3::ZERO; n];
+        for pf in &partial_forces {
+            for (i, &f) in pf.iter().enumerate() {
+                forces[i] += f;
+            }
         }
-
         forces
     }
     
