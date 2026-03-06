@@ -54,41 +54,39 @@ pub fn draw_menu_bar(ctx: &Context, state: &mut EditorState) {
                 });
                 ui.menu_button("Add", |ui| {
                     ui.label(RichText::new("Mesh").color(TEXT_DIM));
-                    if ui.button("  Cube (Rigid)").clicked() {
-                        let n = state.objects.len();
-                        state.objects.push(crate::editor::SceneObject::new(
-                            &format!("Cube.{:03}", n),
-                            macroquad::prelude::Vec3::new(0.0, 5.0, 0.0),
-                            macroquad::prelude::GREEN,
-                            PhysicsType::Rigid,
-                        ));
+                    if ui.button("  ■ Cube (Rigid)").clicked() {
+                        state.pending_add_cube = true;
                         ui.close_menu();
                     }
-                    if ui.button("  Soft Body").clicked() {
-                        let n = state.objects.len();
+                    if ui.button("  ● Sphere (Rigid)").clicked() {
+                        state.pending_add_sphere = true;
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    ui.label(RichText::new("Soft / Fluid").color(TEXT_DIM));
+                    if ui.button("  💙 Soft Body (FEM)").clicked() {
                         state.objects.push(crate::editor::SceneObject::new(
-                            &format!("SoftBody.{:03}", n),
+                            "SoftBody",
                             macroquad::prelude::Vec3::new(2.0, 8.0, 0.0),
                             macroquad::prelude::BLUE,
                             PhysicsType::SoftBody,
                         ));
                         ui.close_menu();
                     }
-                    if ui.button("  Fluid Volume").clicked() {
-                        let n = state.objects.len();
+                    if ui.button("  🌊 Fluid Volume").clicked() {
                         state.objects.push(crate::editor::SceneObject::new(
-                            &format!("Fluid.{:03}", n),
-                            macroquad::prelude::Vec3::new(-3.0, 6.0, 0.0),
+                            "Fluid",
+                            macroquad::prelude::Vec3::new(-3.0, 4.0, 0.0),
                             macroquad::prelude::SKYBLUE,
                             PhysicsType::Fluid,
                         ));
                         ui.close_menu();
                     }
+                    ui.separator();
                     ui.label(RichText::new("Light").color(TEXT_DIM));
-                    if ui.button("  Point Light").clicked() {
-                        let n = state.objects.len();
+                    if ui.button("  ☀ Point Light").clicked() {
                         state.objects.push(crate::editor::SceneObject::new(
-                            &format!("Light.{:03}", n),
+                            "Light",
                             macroquad::prelude::Vec3::new(0.0, 15.0, 0.0),
                             macroquad::prelude::YELLOW,
                             PhysicsType::Static,
@@ -251,7 +249,7 @@ pub fn draw_right_panels(ctx: &Context, state: &mut EditorState) {
 }
 
 /// Bottom status bar
-pub fn draw_status_bar(ctx: &Context, state: &EditorState, fps: i32) {
+pub fn draw_status_bar(ctx: &Context, state: &EditorState, fps: i32, body_count: usize, particle_count: usize) {
     egui::TopBottomPanel::bottom("status_bar")
         .frame(Frame::none().fill(HEADER_BG).inner_margin(Margin { left: 8, right: 8, top: 3, bottom: 3 }))
         .show(ctx, |ui| {
@@ -260,11 +258,13 @@ pub fn draw_status_bar(ctx: &Context, state: &EditorState, fps: i32) {
                     if fps >= 60 { Color32::LIGHT_GREEN } else if fps >= 30 { Color32::YELLOW } else { Color32::RED }
                 ).small());
                 ui.separator();
-                ui.label(RichText::new(format!("Objects: {}", state.objects.len())).color(TEXT_DIM).small());
+                ui.label(RichText::new(format!("Bodies: {body_count}")).color(TEXT_DIM).small());
+                ui.separator();
+                ui.label(RichText::new(format!("Particles: {particle_count}")).color(TEXT_DIM).small());
                 ui.separator();
                 ui.label(RichText::new(format!("Tool: {:?}", state.active_tool)).color(TEXT_DIM).small());
                 ui.separator();
-                ui.label(RichText::new("Physics: DEQ | FEM | Chebyshev Fluid | Hamiltonian Light").color(ACCENT).small());
+                ui.label(RichText::new("GJK • FEM • Chebyshev • PBD • SPH • Wavefront").color(ACCENT).small());
                 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let mode = if state.simulation_playing { "● SIMULATING" } else { "◼ STOPPED" };

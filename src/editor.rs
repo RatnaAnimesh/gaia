@@ -122,6 +122,9 @@ pub struct EditorState {
     pub show_grid: bool,
     pub simulation_playing: bool,
     pub frame: u64,
+    // Pending spawn requests (set by UI, consumed by main loop)
+    pub pending_add_cube:   bool,
+    pub pending_add_sphere: bool,
 }
 
 impl EditorState {
@@ -144,6 +147,8 @@ impl EditorState {
             show_grid: true,
             simulation_playing: false,
             frame: 0,
+            pending_add_cube:   false,
+            pending_add_sphere: false,
         }
     }
 }
