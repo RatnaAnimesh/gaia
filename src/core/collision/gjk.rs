@@ -3,7 +3,7 @@
 /// GJK finds the minimum distance between two convex shapes (or determines they overlap).
 /// EPA expands the simplex from GJK into the global contact normal and penetration depth.
 ///
-/// The key insight: we never need the shapes' geometry directly —
+/// The key insight: we never need the shapes' geometry directly 
 /// only their `support()` function (farthest point along a direction).
 
 use macroquad::prelude::Vec3;
@@ -24,7 +24,7 @@ fn support(shape_a: &Shape, pos_a: Vec3, shape_b: &Shape, pos_b: Vec3, dir: Vec3
     sup_a - sup_b
 }
 
-/// GJK simplex — up to 4 points in the Minkowski difference
+/// GJK simplex  up to 4 points in the Minkowski difference
 #[derive(Default)]
 struct Simplex {
     pts: [Vec3; 4],
@@ -122,7 +122,7 @@ pub fn gjk(shape_a: &Shape, pos_a: Vec3, shape_b: &Shape, pos_b: Vec3) -> Option
     None
 }
 
-/// EPA — Expanding Polytope Algorithm
+/// EPA  Expanding Polytope Algorithm
 /// Extracts penetration depth and contact normal from GJK simplex.
 pub fn epa(
     simplex: Simplex,

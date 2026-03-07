@@ -18,7 +18,7 @@ use core::raycast::{ray_cast, screen_to_ray};
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Gaia — Physics Engine & Editor".to_string(),
+        window_title: "gaia  Physics Engine & Editor".to_string(),
         window_width: 1400,
         window_height: 900,
         high_dpi: true,
@@ -26,7 +26,7 @@ fn window_conf() -> Conf {
     }
 }
 
-// ─── Colour helpers ─────────────────────────────
+//  Colour helpers 
 fn rb_color(id: usize) -> Color {
     let palette = [
         Color::from_rgba(220, 60, 60, 255),
@@ -43,9 +43,9 @@ fn rb_color(id: usize) -> Color {
 async fn main() {
     let mut state = EditorState::new();
 
-    // ╔═══════════════════════════════════════════════════╗
-    // ║  PHYSICS WORLD (GJK + Sequential Impulse)         ║
-    // ╚═══════════════════════════════════════════════════╝
+    // 
+    //   PHYSICS WORLD (GJK + Sequential Impulse)         
+    // 
     let mut phys = PhysicsWorld::new();
 
     // Floor (static, infinite mass)
@@ -63,9 +63,9 @@ async fn main() {
     let sph_mat = PhysicsMaterial { restitution: 0.6, ..Default::default() };
     phys.add_body(RigidBody::new(2, Shape::Sphere { radius: 1.0 }, Vec3::new(1.5, 12.0, 0.5), sph_mat));
 
-    // ╔═══════════════════════════════════════════════════╗
-    // ║  Soft Body (FEM Neo-Hookean)                      ║
-    // ╚═══════════════════════════════════════════════════╝
+    // 
+    //   Soft Body (FEM Neo-Hookean)                      
+    // 
     let mut soft = MatrixFreeSoftBody::new(80.0, 400.0);
     soft.particles.push(vec3(-5.0, 10.0, 0.0));
     soft.particles.push(vec3(-3.0, 10.0, 0.0));
@@ -83,30 +83,30 @@ async fn main() {
         volume: dm.determinant().abs() / 6.0,
     });
 
-    // ╔═══════════════════════════════════════════════════╗
-    // ║  Cloth (PBD)                                      ║
-    // ╚═══════════════════════════════════════════════════╝
+    // 
+    //   Cloth (PBD)                                      
+    // 
     let mut cloth = Cloth::grid(8, 8, 0.6, Vec3::new(4.0, 8.0, -2.0));
 
-    // ╔═══════════════════════════════════════════════════╗
-    // ║  Particle System                                  ║
-    // ╚═══════════════════════════════════════════════════╝
+    // 
+    //   Particle System                                  
+    // 
     let mut particles = ParticleSystem::new();
     let mut emitter = core::particles::ParticleEmitter::new(Vec3::new(-8.0, 1.0, 0.0), 20.0);
     emitter.initial_vel = Vec3::new(0.5, 4.0, 0.0);
     emitter.vel_spread  = 0.8;
     particles.emitters.push(emitter);
 
-    // ╔═══════════════════════════════════════════════════╗
-    // ║  Fluid (Chebyshev)                               ║
-    // ╚═══════════════════════════════════════════════════╝
+    // 
+    //   Fluid (Chebyshev)                               
+    // 
     let fluid_res = 16usize;
     let mut fluid = FluidGrid::new(fluid_res, fluid_res, fluid_res, 0.5);
     fluid.add_impulse(fluid_res / 2, 2, fluid_res / 2, 5.0);
 
-    // ╔═══════════════════════════════════════════════════╗
-    // ║  Light (Hamiltonian Wavefront)                    ║
-    // ╚═══════════════════════════════════════════════════╝
+    // 
+    //   Light (Hamiltonian Wavefront)                    
+    // 
     let mut light = HamiltonianPropagator::new(64, 64);
     let lp = [0.0f32, 18.0, 0.0];
     light.emit_from_point(lp, 64, [1.0, 0.9, 0.6]);
@@ -114,7 +114,7 @@ async fn main() {
     let dt = 0.016_f32;
 
     loop {
-        // ─── Input ────────────────────────────────────────
+        //  Input 
         state.camera.update();
 
         if is_key_pressed(KeyCode::Q) { state.active_tool = editor::ActiveTool::Select; }
@@ -137,7 +137,7 @@ async fn main() {
             }
         }
 
-        // Mouse click → raycast pick
+        // Mouse click  raycast pick
         if is_mouse_button_pressed(MouseButton::Left) {
             let (mx, my) = mouse_position();
             let cam = state.camera.to_camera3d();
@@ -158,7 +158,7 @@ async fn main() {
             }
         }
 
-        // "Add Cube" from editor state — spawn a rigid body from the Add menu
+        // "Add Cube" from editor state  spawn a rigid body from the Add menu
         // The UI sets a pending_add flag we check here
         if state.pending_add_cube {
             state.pending_add_cube = false;
@@ -173,7 +173,7 @@ async fn main() {
             phys.add_body(RigidBody::new(id, Shape::Sphere { radius: 1.0 }, pos, PhysicsMaterial { restitution: 0.6, ..Default::default() }));
         }
 
-        // ─── Physics Step ─────────────────────────────────
+        //  Physics Step 
         if state.simulation_playing {
             state.frame += 1;
             phys.step(dt);
@@ -194,7 +194,7 @@ async fn main() {
             }
         }
 
-        // ─── 3D Rendering ─────────────────────────────────
+        //  3D Rendering 
         clear_background(Color::from_rgba(28, 28, 28, 255));
         set_camera(&state.camera.to_camera3d());
 
@@ -288,7 +288,7 @@ async fn main() {
 
         set_default_camera();
 
-        // ─── egui UI Panels ─────────────────────────────
+        //  egui UI Panels 
         egui_macroquad::ui(|ctx| {
             apply_blender_theme(ctx);
             draw_menu_bar(ctx, &mut state);

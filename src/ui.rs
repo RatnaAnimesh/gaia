@@ -34,7 +34,7 @@ pub fn draw_menu_bar(ctx: &Context, state: &mut EditorState) {
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 // Logo/Title
-                ui.label(RichText::new("⬡ GAIA").size(16.0).color(ACCENT).strong());
+                ui.label(RichText::new(" GAIA").size(16.0).color(ACCENT).strong());
                 ui.separator();
 
                 // Menus
@@ -54,17 +54,17 @@ pub fn draw_menu_bar(ctx: &Context, state: &mut EditorState) {
                 });
                 ui.menu_button("Add", |ui| {
                     ui.label(RichText::new("Mesh").color(TEXT_DIM));
-                    if ui.button("  ■ Cube (Rigid)").clicked() {
+                    if ui.button("   Cube (Rigid)").clicked() {
                         state.pending_add_cube = true;
                         ui.close_menu();
                     }
-                    if ui.button("  ● Sphere (Rigid)").clicked() {
+                    if ui.button("   Sphere (Rigid)").clicked() {
                         state.pending_add_sphere = true;
                         ui.close_menu();
                     }
                     ui.separator();
                     ui.label(RichText::new("Soft / Fluid").color(TEXT_DIM));
-                    if ui.button("  💙 Soft Body (FEM)").clicked() {
+                    if ui.button("   Soft Body (FEM)").clicked() {
                         state.objects.push(crate::editor::SceneObject::new(
                             "SoftBody",
                             macroquad::prelude::Vec3::new(2.0, 8.0, 0.0),
@@ -73,7 +73,7 @@ pub fn draw_menu_bar(ctx: &Context, state: &mut EditorState) {
                         ));
                         ui.close_menu();
                     }
-                    if ui.button("  🌊 Fluid Volume").clicked() {
+                    if ui.button("   Fluid Volume").clicked() {
                         state.objects.push(crate::editor::SceneObject::new(
                             "Fluid",
                             macroquad::prelude::Vec3::new(-3.0, 4.0, 0.0),
@@ -84,7 +84,7 @@ pub fn draw_menu_bar(ctx: &Context, state: &mut EditorState) {
                     }
                     ui.separator();
                     ui.label(RichText::new("Light").color(TEXT_DIM));
-                    if ui.button("  ☀ Point Light").clicked() {
+                    if ui.button("   Point Light").clicked() {
                         state.objects.push(crate::editor::SceneObject::new(
                             "Light",
                             macroquad::prelude::Vec3::new(0.0, 15.0, 0.0),
@@ -102,13 +102,13 @@ pub fn draw_menu_bar(ctx: &Context, state: &mut EditorState) {
                     if ui.checkbox(&mut state.show_grid, "Grid").clicked() {}
                 });
                 ui.menu_button("Help", |ui| {
-                    ui.label("Gaia Physics Engine");
+                    ui.label("gaia Physics Engine");
                     ui.label(RichText::new("github.com/RatnaAnimesh/gaia").color(TEXT_DIM).small());
                 });
 
                 // Right-aligned simulation controls
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let play_label = if state.simulation_playing { "⏸ Pause" } else { "▶ Play" };
+                    let play_label = if state.simulation_playing { " Pause" } else { " Play" };
                     if ui.button(RichText::new(play_label).color(if state.simulation_playing { Color32::LIGHT_GREEN } else { TEXT_PRIMARY })).clicked() {
                         state.simulation_playing = !state.simulation_playing;
                     }
@@ -127,10 +127,10 @@ pub fn draw_toolbar(ctx: &Context, state: &mut EditorState) {
         .show(ctx, |ui| {
             ui.add_space(4.0);
             let tools = [
-                ("↖",  ActiveTool::Select,  "Select (Q)"),
-                ("⇔",  ActiveTool::Move,    "Grab/Move (G)"),
-                ("↻",  ActiveTool::Rotate,  "Rotate (R)"),
-                ("⇲",  ActiveTool::Scale,   "Scale (S)"),
+                ("",  ActiveTool::Select,  "Select (Q)"),
+                ("",  ActiveTool::Move,    "Grab/Move (G)"),
+                ("",  ActiveTool::Rotate,  "Rotate (R)"),
+                ("",  ActiveTool::Scale,   "Scale (S)"),
             ];
             for (icon, tool, tooltip) in tools {
                 let active = state.active_tool == tool;
@@ -144,7 +144,7 @@ pub fn draw_toolbar(ctx: &Context, state: &mut EditorState) {
             }
             ui.separator();
             // Extra tools
-            for (icon, tip) in [("□", "Box Select"), ("○", "Circle Select")] {
+            for (icon, tip) in [("", "Box Select"), ("", "Circle Select")] {
                 let btn = egui::Button::new(RichText::new(icon).size(16.0).color(TEXT_DIM))
                     .fill(Color32::TRANSPARENT)
                     .min_size(Vec2::new(36.0, 36.0));
@@ -162,9 +162,9 @@ pub fn draw_right_panels(ctx: &Context, state: &mut EditorState) {
         .min_width(180.0)
         .frame(Frame::none().fill(PANEL_BG))
         .show(ctx, |ui| {
-            // ── Outliner ────────────────────────────
+            //  Outliner 
             ui.add_space(2.0);
-            ui.label(RichText::new("  📋  Scene Collection").color(TEXT_DIM).small().strong());
+            ui.label(RichText::new("    Scene Collection").color(TEXT_DIM).small().strong());
             ui.separator();
 
             egui::ScrollArea::vertical()
@@ -173,10 +173,10 @@ pub fn draw_right_panels(ctx: &Context, state: &mut EditorState) {
                     for (i, obj) in state.objects.iter().enumerate() {
                         let is_selected = state.selected == Some(i);
                         let icon = match obj.physics_type {
-                            PhysicsType::Rigid    => "🔴",
-                            PhysicsType::SoftBody => "🔵",
-                            PhysicsType::Fluid    => "🌊",
-                            PhysicsType::Static   => "⬜",
+                            PhysicsType::Rigid    => "",
+                            PhysicsType::SoftBody => "",
+                            PhysicsType::Fluid    => "",
+                            PhysicsType::Static   => "",
                         };
                         let row = egui::Frame::none()
                             .fill(if is_selected { SEL_BG } else { Color32::TRANSPARENT })
@@ -186,7 +186,7 @@ pub fn draw_right_panels(ctx: &Context, state: &mut EditorState) {
                                 let label = format!("{} {}", icon, obj.name);
                                 let resp = ui.selectable_label(is_selected, RichText::new(label).color(if is_selected { Color32::WHITE } else { TEXT_PRIMARY }));
                                 if resp.clicked() {
-                                    // mutable borrow workaround – we'll update after
+                                    // mutable borrow workaround  we'll update after
                                 }
                             });
                         });
@@ -198,9 +198,9 @@ pub fn draw_right_panels(ctx: &Context, state: &mut EditorState) {
 
             ui.separator();
 
-            // ── Properties Panel ─────────────────────
+            //  Properties Panel 
             ui.add_space(4.0);
-            ui.label(RichText::new("  ⚙  Properties").color(TEXT_DIM).small().strong());
+            ui.label(RichText::new("    Properties").color(TEXT_DIM).small().strong());
             ui.separator();
 
             if let Some(idx) = state.selected {
@@ -264,10 +264,10 @@ pub fn draw_status_bar(ctx: &Context, state: &EditorState, fps: i32, body_count:
                 ui.separator();
                 ui.label(RichText::new(format!("Tool: {:?}", state.active_tool)).color(TEXT_DIM).small());
                 ui.separator();
-                ui.label(RichText::new("GJK • FEM • Chebyshev • PBD • SPH • Wavefront").color(ACCENT).small());
+                ui.label(RichText::new("GJK  FEM  Chebyshev  PBD  SPH  Wavefront").color(ACCENT).small());
                 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mode = if state.simulation_playing { "● SIMULATING" } else { "◼ STOPPED" };
+                    let mode = if state.simulation_playing { " SIMULATING" } else { " STOPPED" };
                     let col = if state.simulation_playing { Color32::LIGHT_GREEN } else { TEXT_DIM };
                     ui.label(RichText::new(mode).color(col).small().strong());
                 });

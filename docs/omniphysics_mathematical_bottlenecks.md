@@ -1,6 +1,6 @@
 # The Impossibility Wall: Mathematical Bottlenecks of Real-Time Omniphysics
 
-Building an "omniphysics" engine—one that perfectly simulates fluids, soft bodies, rigid bodies, and full-spectrum light transport (ray tracing) simultaneously in real-time on consumer hardware—hits fundamental theoretical limits in Computational Physics and Computer Science.
+Building an "omniphysics" engineone that perfectly simulates fluids, soft bodies, rigid bodies, and full-spectrum light transport (ray tracing) simultaneously in real-time on consumer hardwarehits fundamental theoretical limits in Computational Physics and Computer Science.
 
 The following details the exact mathematical equations, numerical methods, and hardware architectural constraints that currently make this impossible.
 
@@ -80,7 +80,7 @@ To simulate squishy objects (muscle, fat, cloth, jello), we use continuum mechan
 We represent the object as a tetrahedral mesh. To keep the simulation stable even when stretched violently, we use Implicit Euler integration. This yields a non-linear system of equations seeking the unknown velocity change $\Delta \mathbf{v}$:
 $$ \mathbf{M} \Delta \mathbf{v} = \Delta t \left( \mathbf{f}_{ext} - \mathbf{f}_{int}(\mathbf{x} + \Delta t (\mathbf{v} + \Delta \mathbf{v})) \right) $$
 
-Because internal elastic forces $\mathbf{f}_{int}$ are highly non-linear (using hyperelastic models like Neo-Hookean to preserve volume), we must linearize the equation using a multidimensional Newton-Raphson approximation. We compute the derivative of the forces with respect to position—the stiffness matrix (Jacobian/Hessian): $\mathbf{K} = \frac{\partial \mathbf{f}}{\partial \mathbf{x}}$
+Because internal elastic forces $\mathbf{f}_{int}$ are highly non-linear (using hyperelastic models like Neo-Hookean to preserve volume), we must linearize the equation using a multidimensional Newton-Raphson approximation. We compute the derivative of the forces with respect to positionthe stiffness matrix (Jacobian/Hessian): $\mathbf{K} = \frac{\partial \mathbf{f}}{\partial \mathbf{x}}$
 
 The resulting linear system to solve at *every iteration* of *every frame* is:
 $$ \left( \mathbf{M} - \Delta t \frac{\partial \mathbf{f}}{\partial \mathbf{v}} - \Delta t^2 \mathbf{K} \right) \Delta \mathbf{v} = \Delta t \left( \mathbf{f}_{ext} - \mathbf{f}_{int} \right) + \Delta t^2 \mathbf{K} \mathbf{v} $$
@@ -106,7 +106,7 @@ Physically accurate light requires simulating photons bouncing around the enviro
 The core is the rendering equation, a Fredholm integral equation of the second kind:
 $$ L_o(\mathbf{x}, \omega_o, \lambda, t) = L_e(\mathbf{x}, \omega_o, \lambda, t) + \int_{\Omega} f_r(\mathbf{x}, \omega_i, \omega_o, \lambda, t) L_i(\mathbf{x}, \omega_i, \lambda, t) (\omega_i \cdot \mathbf{n}) d\omega_i $$
 
-To solve the integral over the hemisphere $\Omega$, we use Monte Carlo integration. We cast a ray into the scene. To find out what the ray hits, we test it against a tree data structure containing all triangles—a Bounding Volume Hierarchy (BVH). 
+To solve the integral over the hemisphere $\Omega$, we use Monte Carlo integration. We cast a ray into the scene. To find out what the ray hits, we test it against a tree data structure containing all trianglesa Bounding Volume Hierarchy (BVH). 
 
 ### The Computational Bottleneck
 

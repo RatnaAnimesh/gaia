@@ -7,9 +7,9 @@
 ///   - Stretch constraints (keep edge lengths near rest)
 ///   - Bend constraints (resist folding between adjacent triangles)
 ///
-/// Constraint projection: for each constraint C(x₁,x₂) = |x₁-x₂| - d_rest
-///   Δx₁ = -w₁/(w₁+w₂) * (|p₁-p₂| - d_rest) * (p₁-p₂)/|p₁-p₂|
-///   Δx₂ = +w₂/(w₁+w₂) * (|p₁-p₂| - d_rest) * (p₁-p₂)/|p₁-p₂|
+/// Constraint projection: for each constraint C(x,x) = |x-x| - d_rest
+///   x = -w/(w+w) * (|p-p| - d_rest) * (p-p)/|p-p|
+///   x = +w/(w+w) * (|p-p| - d_rest) * (p-p)/|p-p|
 
 use macroquad::prelude::Vec3;
 

@@ -1,15 +1,15 @@
-# <p align="center"> Gaia Physics Engine </p>
+# <p align="center"> gaia Physics Engine </p>
 
 <p align="center">
   <a href="https://github.com/ratnaanimesh/gaia/actions"><img src="https://github.com/ratnaanimesh/gaia/workflows/build/badge.svg" alt="Build Status"></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
 </p>
 
-Gaia is a free and open-source, industrial-grade physics engine designed for advanced multi-physics simulation. It is a unified, high-performance library written in Rust, optimized for hardware-accelerated execution on Apple Silicon (via Metal) and high-fidelity numerical stability.
+gaia is a free and open-source, industrial-grade physics engine designed for advanced multi-physics simulation. It is a unified, high-performance library written in Rust, optimized for hardware-accelerated execution on Apple Silicon (via Metal) and high-fidelity numerical stability.
 
 ### Key Features
 
-Gaia provides a unique combination of speed and precision, ranking in the **Elite Tier** of modern physics engines:
+gaia provides a unique combination of speed and precision, ranking in the **Elite Tier** of modern physics engines:
 
 *   **Continuous Collision Detection (CCD):** Global sub-stepping pipeline capable of capturing hyper-sonic interactions (e.g., a Mach-15 projectile hitting a thin wall without tunneling).
 *   **Unified Multi-Physics Solver:** A single integrated loop handling Rigid Bodies, Spectral FEM Soft Bodies, PBD Cloth, and Eulerian Fluids.
@@ -22,13 +22,13 @@ Gaia provides a unique combination of speed and precision, ranking in the **Elit
 
 ## Benchmarks & Performance
 
-Gaia is built to bridge the gap between "game physics" and "engineering simulation." In the **Industrial Adversarial Suite (46 Tests)**, Gaia maintains 100% stability under extreme conditions:
+gaia is built to bridge the gap between "game physics" and "engineering simulation." In the **Industrial Adversarial Suite (46 Tests)**, gaia maintains 100% stability under extreme conditions:
 
-| System | Metric | Gaia | PhysX 5 |
+| System | Metric | gaia | PhysX 5 |
 |---|---|---|---|
-| **CCD Precision** | Tunneling @ 5000m/s | **✅ Stopped** | ❌ Tunneled |
-| **Fluid Stability** | 1000-frame Longevity | **✅ Stable** | ⚠️ Jitter |
-| **Constraint Solver** | 500-Body Stack Height | **✅ No Pop** | ✅ Stable |
+| **CCD Precision** | Tunneling @ 5000m/s | **PASS Stopped** | FAIL Tunneled |
+| **Fluid Stability** | 1000-frame Longevity | **PASS Stable** | WARN Jitter |
+| **Constraint Solver** | 500-Body Stack Height | **PASS No Pop** | PASS Stable |
 
 For a comprehensive comparison, see the [Universal Ranking Report](docs/ranking_report.md).
 
@@ -59,7 +59,7 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --bin stress_test
 
 ### Running the Interactive Editor
 
-Gaia includes a Blender-inspired interactive editor for real-time scene construction:
+gaia includes a Blender-inspired interactive editor for real-time scene construction:
 
 ```bash
 cargo run --release
@@ -79,7 +79,7 @@ Comprehensive technical documentation is available in the [`docs/`](docs/) direc
 
 ## License
 
-Gaia is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+gaia is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 

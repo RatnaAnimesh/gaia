@@ -1,4 +1,4 @@
-/// Gaia Physics Engine — Automated Stress Test Harness v2
+/// gaia Physics Engine  Automated Stress Test Harness v2
 ///
 /// Runs completely headlessly. Tests every physics subsystem at multiple
 /// scales with adversarial edge cases that kill most engines.
@@ -33,24 +33,24 @@ impl TestSuite {
     }
 
     fn report(&self) {
-        println!("\n╔══════════════════════════════════════════════════════════╗");
-        println!("║      GAIA PHYSICS ENGINE — EDGE CASE STRESS REPORT        ║");
-        println!("╚══════════════════════════════════════════════════════════╝\n");
+        println!("\n");
+        println!("      GAIA PHYSICS ENGINE  EDGE CASE STRESS REPORT        ");
+        println!("\n");
 
         let total  = self.results.len();
         let passed = self.results.iter().filter(|r| r.passed).count();
         let failed = total - passed;
 
         for r in &self.results {
-            let status = if r.passed { "✅ PASS" } else { "❌ FAIL" };
+            let status = if r.passed { "[PASS]" } else { "[FAIL]" };
             println!("  {} {:.<55} {:>8.2}ms", status, format!("{} ", r.name), r.duration.as_secs_f64() * 1000.0);
-            if !r.notes.is_empty() { println!("       ↳ {}", r.notes); }
+            if !r.notes.is_empty() { println!("        {}", r.notes); }
         }
 
-        println!("\n  ───────────────────────────────────────────────────────────");
+        println!("\n  ");
         println!("  Total: {total}  |  Passed: {passed}  |  Failed: {failed}");
-        if failed == 0 { println!("  🎉 ALL TESTS PASSED"); }
-        else { println!("  ⚠️  {failed} test(s) failed — bugs to fix above."); }
+        if failed == 0 { println!("  ALL TESTS PASSED"); }
+        else { println!("  {} test(s) failed  bugs to fix above.", failed); }
         println!();
     }
 }
@@ -77,9 +77,9 @@ fn make_floor(world: &mut gaia::core::solver::PhysicsWorld) {
 fn main() {
     let mut suite = TestSuite::new();
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 1: ORIGINAL PASSING TESTS (regression guard)
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Regression: single free fall", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -103,9 +103,9 @@ fn main() {
         Ok("GJK still working".into())
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 2: HIGH-SPEED TUNNELING (Fast objects through walls)
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Edge: high-speed sphere doesn't tunnel through floor", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -134,11 +134,11 @@ fn main() {
         Ok(format!("Position: {:.1?}", w.bodies[0].position))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 3: DEGENERATE / EXTREME SHAPES
-    // ═══════════════════════════════════════════════════════════
+    // 
 
-    suite.run("Edge: very flat box (pancake) — half_extents (5,0.01,5)", || {
+    suite.run("Edge: very flat box (pancake)  half_extents (5,0.01,5)", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
         use gaia::core::shapes::{Shape, PhysicsMaterial};
         let mut w = PhysicsWorld::new();
@@ -181,16 +181,16 @@ fn main() {
         Ok(format!("Large sphere at y={:.2}", w.bodies[0].position.y))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 4: GJK DEGENERATE CONTACT CASES
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Edge: GJK two shapes at identical position", || {
         use gaia::core::collision::gjk::detect_collision;
         use gaia::core::shapes::Shape;
         let a = Shape::Sphere { radius: 1.0 };
         let b = Shape::Sphere { radius: 1.0 };
-        // Both at origin — maximum overlap
+        // Both at origin  maximum overlap
         let result = std::panic::catch_unwind(|| {
             detect_collision(&a, Vec3::ZERO, &b, Vec3::ZERO)
         });
@@ -205,9 +205,9 @@ fn main() {
         use gaia::core::shapes::Shape;
         let s = Shape::Sphere { radius: 1.0 };
         let b = Shape::Box { half_extents: Vec3::ONE };
-        // Sphere center exactly at box surface: distance = 1.0 + 1.0 = 2.0, sphere radius = 1.0 → touching
+        // Sphere center exactly at box surface: distance = 1.0 + 1.0 = 2.0, sphere radius = 1.0  touching
         let c = detect_collision(&s, Vec3::new(2.0, 0.0, 0.0), &b, Vec3::ZERO);
-        // At exactly touching, GJK may or may not detect — but must not panic/NaN
+        // At exactly touching, GJK may or may not detect  but must not panic/NaN
         Ok(format!("Touch detection: contact={}", c.is_some()))
     });
 
@@ -224,9 +224,9 @@ fn main() {
         Ok(format!("Capsule contact depth={:.3}", c.depth))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 5: EXTREME STACKING
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Edge: 20-box tower (tall stack)", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -278,11 +278,11 @@ fn main() {
         Ok(format!("{ms:.2}ms/frame for 200 bodies"))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 6: NUMERICAL STABILITY EDGE CASES
-    // ═══════════════════════════════════════════════════════════
+    // 
 
-    suite.run("Edge: very large dt (0.1s — 6× normal)", || {
+    suite.run("Edge: very large dt (0.1s  6 normal)", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
         use gaia::core::shapes::{Shape, PhysicsMaterial};
         let mut w = PhysicsWorld::new();
@@ -293,7 +293,7 @@ fn main() {
         Ok("Engine survived 0.1s timestep without NaN".into())
     });
 
-    suite.run("Edge: very small dt (0.0001s) — 160× finer than normal", || {
+    suite.run("Edge: very small dt (0.0001s)  160 finer than normal", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
         use gaia::core::shapes::{Shape, PhysicsMaterial};
         let mut w = PhysicsWorld::new();
@@ -326,9 +326,9 @@ fn main() {
         Ok(format!("Depenetrated to y={:.2}", w.bodies[1].position.y))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 7: FLUID ADVERSARIAL
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Edge: fluid massive impulse (strength 1000)", || {
         use gaia::core::fluid::FluidGrid;
@@ -340,7 +340,7 @@ fn main() {
         Ok("Fluid stable after impulse=1000".into())
     });
 
-    suite.run("Edge: fluid very fine grid (32³ — 32768 cells)", || {
+    suite.run("Edge: fluid very fine grid (32  32768 cells)", || {
         use gaia::core::fluid::FluidGrid;
         let mut g = FluidGrid::new(32, 32, 32, 0.25);
         g.add_impulse(16, 4, 16, 5.0);
@@ -348,13 +348,13 @@ fn main() {
         for _ in 0..20 { g.step(0.016); }
         let ms = t0.elapsed().as_secs_f64() * 1000.0 / 20.0;
         let nans = g.pressure.iter().filter(|v| !v.is_finite()).count();
-        if nans > 0 { return Err(format!("{nans} NaN cells in 32³ grid")); }
-        Ok(format!("{ms:.1}ms/frame for 32³ grid ({} cells)", 32usize.pow(3)))
+        if nans > 0 { return Err(format!("{nans} NaN cells in 32 grid")); }
+        Ok(format!("{ms:.1}ms/frame for 32 grid ({} cells)", 32usize.pow(3)))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 8: JOINT STABILITY
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Edge: stiff spring joint (k=10000) stability", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -379,11 +379,11 @@ fn main() {
         Ok(format!("Stiff spring stable at y={:.2}", w.bodies[0].position.y))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 9: CLOTH ADVERSARIAL
-    // ═══════════════════════════════════════════════════════════
+    // 
 
-    suite.run("Edge: cloth with heavy wind (10× normal)", || {
+    suite.run("Edge: cloth with heavy wind (10 normal)", || {
         use gaia::core::cloth::Cloth;
         let mut c = Cloth::grid(8, 8, 0.5, Vec3::new(0.0, 6.0, 0.0));
         c.wind = Vec3::new(30.0, 0.0, 10.0); // Very strong wind
@@ -394,21 +394,21 @@ fn main() {
         Ok("Cloth stable under heavy wind".into())
     });
 
-    suite.run("Edge: cloth large grid (16×16 = 256 particles)", || {
+    suite.run("Edge: cloth large grid (1616 = 256 particles)", || {
         use gaia::core::cloth::Cloth;
         let mut c = Cloth::grid(16, 16, 0.4, Vec3::new(0.0, 8.0, 0.0));
         let t0 = Instant::now();
         for _ in 0..100 { c.step(0.016); }
         let ms = t0.elapsed().as_secs_f64() * 1000.0 / 100.0;
         for (i, p) in c.particles.iter().enumerate() {
-            if !is_valid(p.position) { return Err(format!("Particle {i} NaN in 16×16")); }
+            if !is_valid(p.position) { return Err(format!("Particle {i} NaN in 1616")); }
         }
-        Ok(format!("{ms:.2}ms/frame for 16×16 cloth"))
+        Ok(format!("{ms:.2}ms/frame for 1616 cloth"))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 10: RAYCAST EDGE CASES
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Edge: ray fired from inside a sphere", || {
         use gaia::core::raycast::{Ray, ray_cast};
@@ -451,11 +451,11 @@ fn main() {
         Ok(format!("{rps:.0} raycasts/sec, {hits}/10000 hits, 20 bodies"))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 11: BVH STRESS
-    // ═══════════════════════════════════════════════════════════
+    // 
 
-    suite.run("Edge: BVH with 1000 objects — no false overlaps", || {
+    suite.run("Edge: BVH with 1000 objects  no false overlaps", || {
         use gaia::core::collision::bvh::{Aabb, BvhTree};
         let mut tree = BvhTree::new();
         for i in 0..1000usize {
@@ -467,9 +467,9 @@ fn main() {
         Ok("1000 objects, 0 false overlaps".into())
     });
 
-    suite.run("Edge: BVH with dense overlapping cloud — all pairs found", || {
+    suite.run("Edge: BVH with dense overlapping cloud  all pairs found", || {
         use gaia::core::collision::bvh::{Aabb, BvhTree};
-        // 5 objects all overlapping at origin — should find C(5,2)=10 pairs
+        // 5 objects all overlapping at origin  should find C(5,2)=10 pairs
         let mut tree = BvhTree::new();
         for i in 0..5 {
             tree.insert(i, Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0)));
@@ -479,9 +479,9 @@ fn main() {
         Ok("All 10 overlapping pairs found".into())
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 12: PARTICLE SYSTEM ADVERSARIAL
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Particles: 1000-particle SPH stability (direct insert)", || {
         use gaia::core::particles::{ParticleSystem, Particle, ParticleEmitter};
@@ -541,9 +541,9 @@ fn main() {
         Ok(format!("{} particles stable under k=1000", sys.particles.len()))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 13: JOINT CHAINS
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Joints: 5-body spring chain (ragdoll backbone)", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -599,9 +599,9 @@ fn main() {
         Ok(format!("Pendulum stable at pos={:.1?}", w.bodies[1].position))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 14: RESTITUTION PHYSICS ACCURACY
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Physics: elastic bounce height conservation (e=0.8)", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -634,7 +634,7 @@ fn main() {
         Ok(format!("Bounce ok: max height={max_y_bounce:.2}m"))
     });
 
-    suite.run("Physics: zero restitution — no bounce", || {
+    suite.run("Physics: zero restitution  no bounce", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
         use gaia::core::shapes::{Shape, PhysicsMaterial};
         let mut w = PhysicsWorld::new();
@@ -650,12 +650,12 @@ fn main() {
         }
         if !hit_floor { return Err("Ball never reached floor".into()); }
         if peak_after > 2.0 { return Err(format!("Ball bounced to y={peak_after:.2} with e=0!")); }
-        Ok(format!("Max height after impact: {peak_after:.3}m — correctly no bounce"))
+        Ok(format!("Max height after impact: {peak_after:.3}m  correctly no bounce"))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 15: LARGE SCALE
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Scale: 500 bodies, 10 frames (maximum scale)", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -672,12 +672,12 @@ fn main() {
         for _ in 0..10 { w.step(0.016); }
         let ms = t0.elapsed().as_secs_f64() * 1000.0 / 10.0;
         check_bodies(&w.bodies)?;
-        Ok(format!("{ms:.1}ms/frame for 500 bodies — {:.0} pairs checked", 500.0 * 499.0 / 2.0))
+        Ok(format!("{ms:.1}ms/frame for 500 bodies  {:.0} pairs checked", 500.0 * 499.0 / 2.0))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 16: MIXED SHAPE COLLISION
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("GJK: sphere vs capsule collision", || {
         use gaia::core::collision::gjk::detect_collision;
@@ -724,11 +724,11 @@ fn main() {
         Ok(format!("All {pairs_tested} shape pairs handled without panic"))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 17: SOFT BODY FEM ADVERSARIAL
-    // ═══════════════════════════════════════════════════════════
+    // 
 
-    suite.run("FEM: external force applied 500 frames — no NaN", || {
+    suite.run("FEM: external force applied 500 frames  no NaN", || {
         use gaia::core::soft_body::{MatrixFreeSoftBody, Tetrahedron};
         use macroquad::math::Mat3;
         // Build a single-tet soft body manually
@@ -793,9 +793,9 @@ fn main() {
         Ok("High-stiffness FEM stable".into())
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 18: FLUID LONGEVITY
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Fluid: 1000-frame longevity (sustained flow)", || {
         use gaia::core::fluid::FluidGrid;
@@ -812,9 +812,9 @@ fn main() {
         Ok("Fluid stable for 1000 frames with periodic impulses".into())
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 19: SLEEPING / WAKING
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Sleep: resting stack woken by falling body", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -835,9 +835,9 @@ fn main() {
         Ok(format!("Settled body slept={was_sleeping}, stack survived wake impact"))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 20: SPRING NETWORK CONFLICT
-    // ═══════════════════════════════════════════════════════════
+    // 
 
     suite.run("Joints: 3-body spring triangle (conflicting constraints)", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
@@ -851,7 +851,7 @@ fn main() {
             w.add_body(RigidBody::new(i, Shape::Sphere { radius: 0.4 }, Vec3::new(x, 5.0, z), PhysicsMaterial::default()));
         }
         let mut joints = JointSystem::new();
-        // Connect all 3 in a triangle — conflicting constraints
+        // Connect all 3 in a triangle  conflicting constraints
         for a in 0..3usize {
             for b in (a+1)..3 {
                 joints.springs.push(SpringJoint {
@@ -869,11 +869,11 @@ fn main() {
         Ok("3-body spring triangle stable under conflicting constraints".into())
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 21: BVH DYNAMIC CORRECTNESS
-    // ═══════════════════════════════════════════════════════════
+    // 
 
-    suite.run("BVH: remove and reinsert — no stale entries", || {
+    suite.run("BVH: remove and reinsert  no stale entries", || {
         use gaia::core::collision::bvh::{Aabb, BvhTree};
         let mut tree = BvhTree::new();
         let mut handles = Vec::new();
@@ -897,11 +897,11 @@ fn main() {
         Ok(format!("BVH found {} pairs after churn", pairs.len()))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // GROUP 22: CLOTH FLOOR COLLISION
-    // ═══════════════════════════════════════════════════════════
+    // 
 
-    suite.run("Cloth: floor collision — no particles below y=0", || {
+    suite.run("Cloth: floor collision  no particles below y=0", || {
         use gaia::core::cloth::Cloth;
         let mut c = Cloth::grid(10, 10, 0.5, Vec3::new(0.0, 4.0, 0.0));
         for _ in 0..400 { c.step(0.016); }
@@ -913,11 +913,11 @@ fn main() {
         Ok(format!("Cloth settled above floor ({} particles)", c.particles.len()))
     });
 
-    // ═══════════════════════════════════════════════════════════
-    // GROUP 23: EXTREME CCD (5000 m/s — bullet)
-    // ═══════════════════════════════════════════════════════════
+    // 
+    // GROUP 23: EXTREME CCD (5000 m/s  bullet)
+    // 
 
-    suite.run("CCD: bullet-speed object (5000 m/s) — no tunneling", || {
+    suite.run("CCD: bullet-speed object (5000 m/s)  no tunneling", || {
         use gaia::core::solver::{PhysicsWorld, RigidBody};
         use gaia::core::shapes::{Shape, PhysicsMaterial};
         // Massive slab wall: 100m wide, 100m tall, 0.2m thick
@@ -937,9 +937,9 @@ fn main() {
         Ok(format!("Bullet stopped at x={x:.2} (vel={v:.1})"))
     });
 
-    // ═══════════════════════════════════════════════════════════
+    // 
     // FINAL REPORT
-    // ═══════════════════════════════════════════════════════════
+    // 
     suite.report();
     if suite.results.iter().any(|r| !r.passed) { std::process::exit(1); }
 }

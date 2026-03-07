@@ -119,7 +119,7 @@ impl ParticleSystem {
             emitter.emit(&mut self.particles, dt);
         }
 
-        // SPH density (simple N² for small counts)
+        // SPH density (simple N for small counts)
         let enabled = self.emitters.iter().any(|e| e.sph_enabled);
         let h = self.emitters.first().map(|e| e.sph_kernel_h).unwrap_or(1.0);
         let h2 = h * h;
@@ -130,7 +130,7 @@ impl ParticleSystem {
                 for j in 0..self.particles.len() {
                     let r2 = (self.particles[i].position - self.particles[j].position).length_squared();
                     if r2 < h2 {
-                        // Poly6 kernel: W = (h²-r²)³
+                        // Poly6 kernel: W = (h-r)
                         let w = (h2 - r2).powi(3);
                         density += w;
                     }

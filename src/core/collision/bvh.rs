@@ -1,4 +1,4 @@
-/// Phase 11: AABB Bounding Volume Hierarchy (BVH) — Broad Phase
+/// Phase 11: AABB Bounding Volume Hierarchy (BVH)  Broad Phase
 ///
 /// Provides O(N log N) collision pair detection.
 /// Each node in the tree stores an AABB that tightly encloses all its children.

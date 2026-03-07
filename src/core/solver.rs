@@ -2,23 +2,23 @@
 ///
 /// Parallelism strategy:
 ///
-///  Step 1 — PARALLEL integrate:
-///    Each RigidBody is independent → par_iter_mut() gives linear speedup on N cores.
+///  Step 1  PARALLEL integrate:
+///    Each RigidBody is independent  par_iter_mut() gives linear speedup on N cores.
 ///
-///  Step 2 — PARALLEL broadphase:
+///  Step 2  PARALLEL broadphase:
 ///    Collect all (i,j) pairs in parallel using a rayon fold+reduce.
 ///
-///  Step 3 — PARALLEL narrow-phase contact detection:
-///    Each pair is independent → compute ContactManifolds in parallel (read-only shapes).
+///  Step 3  PARALLEL narrow-phase contact detection:
+///    Each pair is independent  compute ContactManifolds in parallel (read-only shapes).
 ///    Output: Vec<(i, j, ContactManifold)>
 ///
-///  Step 4 — SERIAL impulse resolution:
+///  Step 4  SERIAL impulse resolution:
 ///    Impulses require mutable aliased writes to two bodies. We use graph-coloring:
 ///    pairs are sorted into non-overlapping COLOR groups so that within a group,
-///    no body appears twice → each group is safe to apply in parallel.
+///    no body appears twice  each group is safe to apply in parallel.
 ///
 /// Net result: integrate + broadphase + narrowphase are embarrassingly parallel.
-/// Resolution is parallel within each color group. Typical speedup: 4–8× on M-series.
+/// Resolution is parallel within each color group. Typical speedup: 48 on M-series.
 
 use macroquad::prelude::Vec3;
 use rayon::prelude::*;
@@ -188,11 +188,11 @@ impl PhysicsWorld {
     pub fn step(&mut self, dt: f32) {
         let n = self.bodies.len();
 
-        // ════════════════════════════════════════════════════════
+        // 
         // CCD: determine how many sub-steps are needed this frame.
         // Each sub-step is at most one body-radius of travel so
         // no body can skip through a surface undetected.
-        // ════════════════════════════════════════════════════════
+        // 
         let max_ccd = self.bodies.iter()
             .filter(|b| !b.is_static())
             .map(|b| {
@@ -202,7 +202,7 @@ impl PhysicsWorld {
                     Shape::Capsule { radius, half_height } => radius + half_height,
                 };
                 let travel = b.velocity.length() * dt;
-                // Use 0.5× radius so there are always ≥2 sub-steps per radius of travel
+                // Use 0.5 radius so there are always 2 sub-steps per radius of travel
                 // Cap sub-steps at 1024 (enough for Mach 10+, preventing hangs)
                 ((travel / (r * 0.5).max(0.005)).ceil() as usize).clamp(1, 1024)
             })
@@ -255,7 +255,7 @@ impl PhysicsWorld {
             // STEP 5: POSITIONAL CORRECTION + VELOCITY CLAMPING (Split Impulse)
             // Directly push overlapping bodies apart. Also zero out approaching
             // velocity component so even depth=0 contacts don't let bodies pass through.
-            const SLOP: f32 = 0.0;         // zero tolerance — catch even surface grazes
+            const SLOP: f32 = 0.0;         // zero tolerance  catch even surface grazes
             const BETA: f32 = 0.5; // Smooth but firm positional recovery
             for &(i, j, ref manifold) in &contacts {
                 let depth = (manifold.depth - SLOP).max(0.0);

@@ -11,7 +11,7 @@ pub struct PhysicsMaterial {
     pub restitution: f32,       // Bounciness [0..1]
     pub friction_static: f32,   // Static friction coefficient
     pub friction_dynamic: f32,  // Kinetic friction coefficient
-    pub density: f32,           // kg/m³
+    pub density: f32,           // kg/m
 }
 
 impl Default for PhysicsMaterial {

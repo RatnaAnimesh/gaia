@@ -109,7 +109,7 @@ impl FluidGrid {
         self.compute_divergence(dt);
 
         // Eigenvalue bounds for the 3D discrete Laplacian on a uniform grid.
-        // Keep lambda_min at least 5% of lambda_max to prevent rho → 1 (divergence).
+        // Keep lambda_min at least 5% of lambda_max to prevent rho  1 (divergence).
         let lambda_max = 4.0 / (self.cell_size * self.cell_size);
         let lambda_min = (0.05 * lambda_max).max(1e-4); // GUARD: never let rho get too close to 1
         let rho = (lambda_max - lambda_min) / (lambda_max + lambda_min); // < 1 by construction

@@ -15,7 +15,7 @@ pub struct SpringJoint {
     pub anchor_local_b: Vec3, // Attachment point in B's local space
     pub rest_length:    f32,
     pub stiffness:      f32,  // k [N/m]
-    pub damping:        f32,  // b [N·s/m]
+    pub damping:        f32,  // b [Ns/m]
 }
 
 impl SpringJoint {

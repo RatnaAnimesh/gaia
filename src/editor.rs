@@ -82,13 +82,13 @@ impl OrbitCamera {
     }
 
     pub fn update(&mut self) {
-        // Left mouse drag → orbit
+        // Left mouse drag  orbit
         if is_mouse_button_down(MouseButton::Left) {
             let delta = mouse_delta_position();
             self.yaw   -= delta.x * 2.5;
             self.pitch  = (self.pitch + delta.y * 2.5).clamp(-1.5, 1.5);
         }
-        // Middle mouse drag → pan
+        // Middle mouse drag  pan
         if is_mouse_button_down(MouseButton::Middle) {
             let delta = mouse_delta_position();
             // Build right/up vectors from yaw
@@ -97,7 +97,7 @@ impl OrbitCamera {
             self.pivot -= right * delta.x * self.radius * 0.5;
             self.pivot += up    * delta.y * self.radius * 0.5;
         }
-        // Scroll → zoom
+        // Scroll  zoom
         let (_sx, sy) = mouse_wheel();
         self.radius = (self.radius - sy * 1.5).clamp(2.0, 200.0);
     }
@@ -112,7 +112,7 @@ impl OrbitCamera {
     }
 }
 
-/// The full editor state — equivalent to Blender's bpy.context
+/// The full editor state  equivalent to Blender's bpy.context
 pub struct EditorState {
     pub objects: Vec<SceneObject>,
     pub selected: Option<usize>,

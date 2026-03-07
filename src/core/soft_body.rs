@@ -38,7 +38,7 @@ impl MatrixFreeSoftBody {
     }
 
     /// PARALLEL force computation via rayon parallel fold.
-    /// Each tet's contribution is independent — no data races.
+    /// Each tet's contribution is independent  no data races.
     /// Forces are reduced into a per-particle accumulator using atomic-free fold.
     pub fn compute_forces(&self) -> Vec<Vec3> {
         let n = self.particles.len();
