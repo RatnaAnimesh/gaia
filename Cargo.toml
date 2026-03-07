@@ -12,3 +12,8 @@ macroquad = "0.4.14"
 metal = "0.33.0"
 objc2 = "0.6.4"
 rayon = "1.11.0"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

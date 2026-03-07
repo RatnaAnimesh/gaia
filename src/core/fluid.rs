@@ -108,46 +108,48 @@ impl FluidGrid {
     pub fn pressure_project_chebyshev(&mut self, dt: f32, iterations: usize) {
         self.compute_divergence(dt);
 
-        // Eigenvalue bounds for the discrete Laplacian on a uniform grid
-        // lambda_max = 4 / h^2 * sin^2(pi*h/2) ~ 4/h^2,  lambda_min ~ 0 (estimated)
+        // Eigenvalue bounds for the 3D discrete Laplacian on a uniform grid.
+        // Keep lambda_min at least 5% of lambda_max to prevent rho → 1 (divergence).
         let lambda_max = 4.0 / (self.cell_size * self.cell_size);
-        let lambda_min = 0.01 * lambda_max; // practical lower bound estimate
-        
-        let rho = (lambda_max - lambda_min) / (lambda_max + lambda_min);
-        
+        let lambda_min = (0.05 * lambda_max).max(1e-4); // GUARD: never let rho get too close to 1
+        let rho = (lambda_max - lambda_min) / (lambda_max + lambda_min); // < 1 by construction
+
         let n = self.width * self.height * self.depth;
         let mut p_prev = self.pressure.clone();
         let mut p_curr = self.pressure.clone();
 
-        // 1st iteration: omega_1 = 2 / (lambda_max + lambda_min)
+        // First Chebyshev step: omega_1 = 2 / (lambda_max + lambda_min)
         let omega_init = 2.0 / (lambda_max + lambda_min);
-        
-        // Apply first Chebyshev step
         for z in 1..self.depth - 1 {
             for y in 1..self.height - 1 {
                 for x in 1..self.width - 1 {
                     let i = self.idx(x, y, z);
                     let residual = self.divergence[i] - self.laplacian_at(&p_curr, x, y, z);
-                    p_curr[i] += omega_init * residual;
+                    p_curr[i] = (p_curr[i] + omega_init * residual).clamp(-1e6, 1e6);
                 }
             }
         }
 
-        // Subsequent Chebyshev iterations with recurrence coefficients
+        // Subsequent iterations with Chebyshev recurrence
         let mut omega = omega_init;
+        let omega_max = 2.0 / (lambda_min + 1e-8); // hard cap on omega growth
         for _k in 1..iterations {
-            let omega_new = 1.0 / (1.0 - (rho * rho * omega / 4.0));
+            let denom = 1.0 - (rho * rho * omega / 4.0);
+            // GUARD: denominator must stay positive to avoid division-by-zero / flip
+            if denom.abs() < 1e-8 { break; }
+            let omega_new = (1.0 / denom).min(omega_max);
             let beta = omega_new * rho * rho / 4.0;
             omega = omega_new;
-            
-            let mut p_next = vec![0.0; n];
+
+            let mut p_next = vec![0.0f32; n];
             for z in 1..self.depth - 1 {
                 for y in 1..self.height - 1 {
                     for x in 1..self.width - 1 {
                         let i = self.idx(x, y, z);
                         let residual = self.divergence[i] - self.laplacian_at(&p_curr, x, y, z);
-                        // Chebyshev recurrence: x_new = omega*(r + beta*(x_curr - x_prev)) + x_curr
-                        p_next[i] = omega * (residual + beta * (p_curr[i] - p_prev[i])) + p_curr[i];
+                        let val = omega * (residual + beta * (p_curr[i] - p_prev[i])) + p_curr[i];
+                        // GUARD: clamp and zero NaN so bad cells don't propagate
+                        p_next[i] = if val.is_finite() { val.clamp(-1e6, 1e6) } else { 0.0 };
                     }
                 }
             }
