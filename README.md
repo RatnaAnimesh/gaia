@@ -1,4 +1,4 @@
-# <p align="center"> gaia Physics Engine </p>
+# <p align="center"> gaia </p>
 
 <p align="center">
   <a href="https://github.com/ratnaanimesh/gaia/actions"><img src="https://github.com/ratnaanimesh/gaia/workflows/build/badge.svg" alt="Build Status"></a>
@@ -26,9 +26,9 @@ gaia is built to bridge the gap between "game physics" and "engineering simulati
 
 | System | Metric | gaia | PhysX 5 |
 |---|---|---|---|
-| **CCD Precision** | Tunneling @ 5000m/s | **PASS Stopped** | FAIL Tunneled |
-| **Fluid Stability** | 1000-frame Longevity | **PASS Stable** | WARN Jitter |
-| **Constraint Solver** | 500-Body Stack Height | **PASS No Pop** | PASS Stable |
+| **CCD Precision** | Tunneling @ 5000m/s | **✅ Stopped** | ❌ Tunneled |
+| **Fluid Stability** | 1000-frame Longevity | **✅ Stable** | ⚠️ Jitter |
+| **Constraint Solver** | 500-Body Stack Height | **✅ No Pop** | ✅ Stable |
 
 For a comprehensive comparison, see the [Universal Ranking Report](docs/ranking_report.md).
 
@@ -83,4 +83,4 @@ gaia is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) f
 
 ## Acknowledgments
 
-Developed by **Animesh Ratna** and the **SAGE/Antigravity** team. Inspired by the numerical rigour of MuJoCo and the modern architecture of the Rust physics ecosystem.
+Developed by **Animesh Ratna**. Inspired by the numerical rigour of MuJoCo and the modern architecture of the Rust physics ecosystem.
