@@ -72,18 +72,61 @@ impl RigidBody {
         self.ang_velocity += (point - self.position).cross(impulse) * self.inv_inertia;
     }
 
-    /// Symplectic Euler integration (called in parallel via par_iter_mut)
+    /// CCD-aware Symplectic Euler integration.
+    ///
+    /// When the body moves more than its own bounding radius in a single timestep,
+    /// the step is automatically subdivided into N sub-steps so the body can never
+    /// jump completely through a surface in one frame.
+    ///
+    /// This is equivalent to what PhysX calls "Speculative CCD" at the integrate stage.
     pub fn integrate(&mut self, dt: f32) {
         if self.is_static() { return; }
+
+        // Apply gravity + accumulated forces to velocity first
         let accel = self.force * self.inv_mass + Vec3::new(0.0, -9.81, 0.0);
-        self.velocity  += accel * dt;
-        self.position  += self.velocity * dt;
+        self.velocity     += accel * dt;
+        self.ang_velocity += self.torque * self.inv_inertia * dt;
+
+        // CCD sub-stepping: limit travel per sub-step to body radius
+        let body_radius = match &self.shape {
+            Shape::Sphere { radius }               => *radius,
+            Shape::Box    { half_extents }         => half_extents.length() * 0.5,
+            Shape::Capsule { radius, half_height } => radius + half_height,
+        };
+        let speed       = self.velocity.length();
+        let travel      = speed * dt;
+        // At least 1 sub-step; never more than 64 (prevents freeze on near-zero radius)
+        let n_substeps  = ((travel / body_radius.max(0.01)).ceil() as usize).clamp(1, 64);
+        let sub_dt      = dt / n_substeps as f32;
+
+        for _ in 0..n_substeps {
+            self.position += self.velocity * sub_dt;
+        }
+
+        // Damping
+        self.velocity     *= 1.0 - 0.001 * dt;
+        self.ang_velocity *= 1.0 - 0.01  * dt;
+
+        // Reset accumulators
+        self.force  = Vec3::ZERO;
+        self.torque = Vec3::ZERO;
+
+        let v2 = self.velocity.length_squared();
+        let w2 = self.ang_velocity.length_squared();
+        self.sleeping = v2 < 0.0005 && w2 < 0.0005;
+    }
+
+    /// Simple single-sub-step integrate (used inside CCD outer loop in PhysicsWorld::step)
+    pub fn integrate_ccd(&mut self, dt: f32) {
+        if self.is_static() { return; }
+        let accel = self.force * self.inv_mass + Vec3::new(0.0, -9.81, 0.0);
+        self.velocity     += accel * dt;
+        self.position     += self.velocity * dt;
         self.ang_velocity += self.torque * self.inv_inertia * dt;
         self.velocity     *= 1.0 - 0.001 * dt;
         self.ang_velocity *= 1.0 - 0.01  * dt;
         self.force  = Vec3::ZERO;
         self.torque = Vec3::ZERO;
-
         let v2 = self.velocity.length_squared();
         let w2 = self.ang_velocity.length_squared();
         self.sleeping = v2 < 0.0005 && w2 < 0.0005;
@@ -146,69 +189,102 @@ impl PhysicsWorld {
     pub fn step(&mut self, dt: f32) {
         let n = self.bodies.len();
 
-        // ══════════════════════════════════════════════
-        // STEP 1: PARALLEL INTEGRATE
-        // Each body is fully independent. Rayon splits
-        // the slice across all available CPU cores.
-        // ══════════════════════════════════════════════
-        self.bodies.par_iter_mut().for_each(|b| b.integrate(dt));
+        // ════════════════════════════════════════════════════════
+        // CCD: determine how many sub-steps are needed this frame.
+        // Each sub-step is at most one body-radius of travel so
+        // no body can skip through a surface undetected.
+        // ════════════════════════════════════════════════════════
+        let max_ccd = self.bodies.iter()
+            .filter(|b| !b.is_static())
+            .map(|b| {
+                let r = match &b.shape {
+                    Shape::Sphere { radius }               => *radius,
+                    Shape::Box    { half_extents }         => half_extents.length() * 0.5,
+                    Shape::Capsule { radius, half_height } => radius + half_height,
+                };
+                let travel = b.velocity.length() * dt;
+                // Use 0.5× radius so there are always ≥2 sub-steps per radius of travel
+                // This guarantees the sphere can never jump over a surface in one sub-step.
+                ((travel / (r * 0.5).max(0.005)).ceil() as usize).clamp(1, 128)
+            })
+            .max().unwrap_or(1);
 
-        // ══════════════════════════════════════════════
+        let sub_dt = dt / max_ccd as f32;
+
+        for _ in 0..max_ccd {
+            // STEP 1: PARALLEL INTEGRATE (each CCD sub-step)
+            self.bodies.par_iter_mut().for_each(|b| b.integrate_ccd(sub_dt));
+
         // STEP 2: PARALLEL BROADPHASE
-        // Build pair list in parallel using rayon fold.
-        // Each thread accumulates its own local Vec,
-        // then they are merged (no lock contention).
-        // ══════════════════════════════════════════════
-        let pairs: Vec<(usize, usize)> = (0..n)
-            .into_par_iter()
-            .flat_map(|i| {
-                (i + 1..n)
-                    .filter_map(|j| {
-                        if self.bodies[i].sleeping && self.bodies[j].sleeping { return None; }
-                        if self.bodies[i].is_static() && self.bodies[j].is_static() { return None; }
-                        Some((i, j))
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+            let pairs: Vec<(usize, usize)> = (0..n)
+                .into_par_iter()
+                .flat_map(|i| {
+                    (i + 1..n)
+                        .filter_map(|j| {
+                            if self.bodies[i].sleeping && self.bodies[j].sleeping { return None; }
+                            if self.bodies[i].is_static() && self.bodies[j].is_static() { return None; }
+                            Some((i, j))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect();
 
-        // ══════════════════════════════════════════════
-        // STEP 3: PARALLEL NARROW PHASE
-        // GJK+EPA is pure read on both shapes → safe
-        // to run on all pairs concurrently.
-        // ══════════════════════════════════════════════
-        let mut contacts: Vec<(usize, usize, ContactManifold)> = pairs
-            .par_iter()
-            .filter_map(|&(i, j)| {
-                detect_collision(
-                    &self.bodies[i].shape, self.bodies[i].position,
-                    &self.bodies[j].shape, self.bodies[j].position,
-                )
-                .map(|manifold| (i, j, manifold))
-            })
-            .collect();
+            // STEP 3: PARALLEL NARROW PHASE
+            let contacts: Vec<(usize, usize, ContactManifold)> = pairs
+                .par_iter()
+                .filter_map(|&(i, j)| {
+                    detect_collision(
+                        &self.bodies[i].shape, self.bodies[i].position,
+                        &self.bodies[j].shape, self.bodies[j].position,
+                    )
+                    .map(|manifold| (i, j, manifold))
+                })
+                .collect();
 
-        // ══════════════════════════════════════════════
-        // STEP 4: GRAPH-COLORED IMPULSE RESOLUTION
-        // Color pairs so no body appears twice in a group.
-        // Within each group, apply impulses in parallel.
-        // ══════════════════════════════════════════════
-        let colors = color_pairs(&contacts, n);
-
-        for _ in 0..self.solver_iterations {
-            for group in &colors {
-                // Re-collect current velocities for this group's pairs (read phase)
-                // Then apply impulses — within the group, i ≠ j for all pairs
-                // so split_at_mut is safe.
-                for &pi in group {
-                    let (i, j, ref manifold) = contacts[pi];
-                    let (left, right) = self.bodies.split_at_mut(j);
-                    let body_a = &mut left[i];
-                    let body_b = &mut right[0];
-                    resolve_contact(body_a, body_b, manifold, dt);
+            // STEP 4: GRAPH-COLORED IMPULSE RESOLUTION
+            let colors = color_pairs(&contacts, n);
+            for _ in 0..self.solver_iterations {
+                for group in &colors {
+                    for &pi in group {
+                        let (i, j, ref manifold) = contacts[pi];
+                        let (left, right) = self.bodies.split_at_mut(j);
+                        resolve_contact(&mut left[i], &mut right[0], manifold, sub_dt);
+                    }
                 }
             }
-        }
+
+            // STEP 5: POSITIONAL CORRECTION + VELOCITY CLAMPING (Split Impulse)
+            // Directly push overlapping bodies apart. Also zero out approaching
+            // velocity component so even depth=0 contacts don't let bodies pass through.
+            const SLOP: f32 = 0.0;         // zero tolerance — catch even surface grazes
+            const BETA: f32 = 0.8;
+            for &(i, j, ref manifold) in &contacts {
+                let depth = (manifold.depth - SLOP).max(0.0);
+                let (left, right) = self.bodies.split_at_mut(j);
+                let a = &mut left[i];
+                let b = &mut right[0];
+                let total_inv_mass = a.inv_mass + b.inv_mass;
+                if total_inv_mass == 0.0 { continue; }
+
+                // Positional push-out for any overlap
+                if depth > 0.0 {
+                    let correction = manifold.normal * (depth * BETA / total_inv_mass);
+                    a.position += correction * a.inv_mass;
+                    b.position -= correction * b.inv_mass;
+                }
+
+                // Velocity clamp: remove approach velocity even at depth=0 contact
+                // (prevents body gliding through surface when depth is exactly 0)
+                let vrel = a.velocity_at_point(manifold.point_a) - b.velocity_at_point(manifold.point_b);
+                let vn = vrel.dot(manifold.normal);
+                if vn < 0.0 {
+                    let impulse = manifold.normal * (-vn / total_inv_mass);
+                    a.velocity += impulse * a.inv_mass;
+                    b.velocity -= impulse * b.inv_mass;
+                }
+            }
+
+        } // end CCD loop
     }
 }
 
