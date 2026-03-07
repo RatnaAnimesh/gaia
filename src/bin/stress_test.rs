@@ -114,6 +114,7 @@ fn main() {
         make_floor(&mut w);
         let mut b = RigidBody::new(1, Shape::Sphere { radius: 0.5 }, Vec3::new(0.0, 15.0, 0.0), PhysicsMaterial { restitution: 0.0, ..Default::default() });
         b.velocity = Vec3::new(0.0, -50.0, 0.0); // Very fast downward
+        b.enable_ccd = true; // MUST enable CCD for high-speed tunneling tests
         w.add_body(b);
         for _ in 0..60 { w.step(0.016); }
         check_bodies(&w.bodies)?;

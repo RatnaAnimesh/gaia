@@ -25,8 +25,6 @@ use rayon::prelude::*;
 use crate::core::shapes::{Shape, PhysicsMaterial};
 use crate::core::collision::gjk::{detect_collision, ContactManifold};
 
-/// A full 6-DOF rigid body
-#[derive(Debug)]
 pub struct RigidBody {
     pub id:           usize,
     pub position:     Vec3,
@@ -41,6 +39,9 @@ pub struct RigidBody {
     pub shape:        Shape,
     pub material:     PhysicsMaterial,
     pub sleeping:     bool,
+    pub enable_ccd:   bool,
+    pub pre_step_velocity: Vec3,
+    pub pre_step_ang_velocity: Vec3,
 }
 
 impl RigidBody {
@@ -56,7 +57,9 @@ impl RigidBody {
             id, position, velocity: Vec3::ZERO, ang_velocity: Vec3::ZERO,
             force: Vec3::ZERO, torque: Vec3::ZERO,
             mass, inv_mass, inertia, inv_inertia,
-            shape, material, sleeping: false,
+            shape, material, sleeping: false, enable_ccd: false,
+            pre_step_velocity: Vec3::ZERO,
+            pre_step_ang_velocity: Vec3::ZERO,
         }
     }
 
@@ -202,45 +205,54 @@ impl PhysicsWorld {
                     Shape::Capsule { radius, half_height } => radius + half_height,
                 };
                 let travel = b.velocity.length() * dt;
-                // Use 0.5 radius so there are always 2 sub-steps per radius of travel
-                // Cap sub-steps at 1024 (enough for Mach 10+, preventing hangs)
-                ((travel / (r * 0.5).max(0.005)).ceil() as usize).clamp(1, 1024)
+                
+                // If CCD enabled, use at least 128 steps to catch even thin floors.
+                if b.enable_ccd { return ((travel / (r * 0.2).max(0.001)).ceil() as usize).clamp(128, 4096); }
+                if travel < r * 0.5 { return 1; }
+                
+                ((travel / (r * 0.5).max(0.005)).ceil() as usize).clamp(1, 4096)
             })
             .max().unwrap_or(1);
+
+        // CAPTURE velocity for restitution conservation
+        self.bodies.iter_mut().for_each(|b| {
+            b.pre_step_velocity = b.velocity;
+            b.pre_step_ang_velocity = b.ang_velocity;
+        });
 
         let sub_dt = dt / max_ccd as f32;
 
         for _ in 0..max_ccd {
-            // STEP 1: PARALLEL INTEGRATE (each CCD sub-step)
+            // 1. INTEGRATE
             self.bodies.par_iter_mut().for_each(|b| b.integrate_ccd(sub_dt));
 
-        // STEP 2: PARALLEL BROADPHASE
+            // 2. BROAD + NARROW PHASE
+            let bodies_ref = &self.bodies;
             let pairs: Vec<(usize, usize)> = (0..n)
                 .into_par_iter()
                 .flat_map(|i| {
-                    (i + 1..n)
-                        .filter_map(|j| {
-                            if self.bodies[i].sleeping && self.bodies[j].sleeping { return None; }
-                            if self.bodies[i].is_static() && self.bodies[j].is_static() { return None; }
+                    (i+1..n)
+                        .into_par_iter()
+                        .filter_map(move |j| {
+                            if bodies_ref[i].sleeping && bodies_ref[j].sleeping { return None; }
+                            if bodies_ref[i].is_static() && bodies_ref[j].is_static() { return None; }
                             Some((i, j))
                         })
-                        .collect::<Vec<_>>()
                 })
                 .collect();
 
-            // STEP 3: PARALLEL NARROW PHASE
             let contacts: Vec<(usize, usize, ContactManifold)> = pairs
                 .par_iter()
                 .filter_map(|&(i, j)| {
                     detect_collision(
-                        &self.bodies[i].shape, self.bodies[i].position,
-                        &self.bodies[j].shape, self.bodies[j].position,
+                        &bodies_ref[i].shape, bodies_ref[i].position,
+                        &bodies_ref[j].shape, bodies_ref[j].position,
                     )
                     .map(|manifold| (i, j, manifold))
                 })
                 .collect();
 
-            // STEP 4: GRAPH-COLORED IMPULSE RESOLUTION
+            // 3. VELOCITY SOLVER (Sequential Impulse)
             let colors = color_pairs(&contacts, n);
             for _ in 0..40 {
                 for group in &colors {
@@ -252,35 +264,29 @@ impl PhysicsWorld {
                 }
             }
 
-            // STEP 5: POSITIONAL CORRECTION + VELOCITY CLAMPING (Split Impulse)
-            // Directly push overlapping bodies apart. Also zero out approaching
-            // velocity component so even depth=0 contacts don't let bodies pass through.
-            const SLOP: f32 = 0.0;         // zero tolerance  catch even surface grazes
-            const BETA: f32 = 0.5; // Smooth but firm positional recovery
-            for &(i, j, ref manifold) in &contacts {
-                let depth = (manifold.depth - SLOP).max(0.0);
-                let (left, right) = self.bodies.split_at_mut(j);
-                let a = &mut left[i];
-                let b = &mut right[0];
-                let total_inv_mass = a.inv_mass + b.inv_mass;
-                if total_inv_mass == 0.0 { continue; }
-
-                // Positional push-out: directly move bodies apart by the remaining depth.
-                // Split Impulse design: ONLY positions are corrected here.
-                // ALL velocity response (inelastic zeroing, restitution bounce) is handled
-                // exclusively by resolve_contact() in Step 4, never here.
-                if depth > 0.0 {
-                    let correction = manifold.normal * (depth * BETA / total_inv_mass);
-                    a.position += correction * a.inv_mass;
-                    b.position -= correction * b.inv_mass;
+            // 4. POSITION SOLVER
+            const BETA: f32 = 0.2;
+            for _ in 0..10 {
+                for group in &colors {
+                    for &pi in group {
+                        let (i, j, ref manifold) = contacts[pi];
+                        if manifold.depth <= 0.001 { continue; }
+                        let (left, right) = self.bodies.split_at_mut(j);
+                        let a = &mut left[i];
+                        let b = &mut right[0];
+                        let total_inv_mass = a.inv_mass + b.inv_mass;
+                        if total_inv_mass == 0.0 { continue; }
+                        let correction = manifold.normal * (manifold.depth * BETA / total_inv_mass);
+                        a.position += correction * a.inv_mass;
+                        b.position -= correction * b.inv_mass;
+                    }
                 }
             }
-
         } // end CCD loop
     }
 }
 
-fn resolve_contact(a: &mut RigidBody, b: &mut RigidBody, c: &ContactManifold, dt: f32) {
+fn resolve_contact(a: &mut RigidBody, b: &mut RigidBody, c: &ContactManifold, _dt: f32) {
     let ra = c.point_a - a.position;
     let rb = c.point_b - b.position;
 
@@ -288,40 +294,53 @@ fn resolve_contact(a: &mut RigidBody, b: &mut RigidBody, c: &ContactManifold, dt
     let vb   = b.velocity_at_point(c.point_b);
     let vrel = va - vb;
     let vn   = vrel.dot(c.normal);
-    if vn > 0.0 { return; } // already separating
+    if vn > 0.0 { return; } // Already separating
 
-    let e    = (a.material.restitution * b.material.restitution).sqrt();
-    let bias = 0.0; // Bias removed: positional correction is handled by Step 5 (Split Impulse)
+    // Calculate restitution based on pre-step velocity to avoid sub-step damping
+    let va0 = a.pre_step_velocity + a.pre_step_ang_velocity.cross(c.point_a - a.position);
+    let vb0 = b.pre_step_velocity + b.pre_step_ang_velocity.cross(c.point_b - b.position);
+    let vn0 = (va0 - vb0).dot(c.normal);
+    
+    let e = (a.material.restitution * b.material.restitution).sqrt();
+    let e = if vn0.abs() < 0.2 { 0.0 } else { e };
 
     let ra_cross_n = ra.cross(c.normal);
     let rb_cross_n = rb.cross(c.normal);
     let eff_mass_n = a.inv_mass + b.inv_mass
         + (ra_cross_n * a.inv_inertia).dot(ra_cross_n)
         + (rb_cross_n * b.inv_inertia).dot(rb_cross_n);
+    if eff_mass_n < 1e-10 { return; }
 
-    let lambda_n = ((-(1.0 + e) * vn + bias) / eff_mass_n).max(0.0);
-    let imp_n    = c.normal * lambda_n;
+    // Target impulsive change to reach -e * vn0
+    let vn_target = -e * vn0;
+    let lambda_n = ((vn_target - vn) / eff_mass_n).max(0.0);
+    
+    let imp_n = c.normal * lambda_n;
     a.apply_impulse( imp_n, c.point_a);
     b.apply_impulse(-imp_n, c.point_b);
 
+    // Friction
+    let vrel_new = a.velocity_at_point(c.point_a) - b.velocity_at_point(c.point_b);
     let t1 = if c.normal.abs().x < 0.9 {
         c.normal.cross(Vec3::X).normalize_or_zero()
     } else {
         c.normal.cross(Vec3::Y).normalize_or_zero()
     };
-    let t2  = c.normal.cross(t1);
-    let mu  = (a.material.friction_dynamic * b.material.friction_dynamic).sqrt();
+    let t2 = c.normal.cross(t1);
+    let mu = (a.material.friction_dynamic * b.material.friction_dynamic).sqrt();
     let max_f = mu * lambda_n;
 
     for tangent in [t1, t2] {
-        let vt        = vrel.dot(tangent);
+        let vt = vrel_new.dot(tangent);
         let ra_cross_t = ra.cross(tangent);
         let rb_cross_t = rb.cross(tangent);
         let eff_mass_t = a.inv_mass + b.inv_mass
             + (ra_cross_t * a.inv_inertia).dot(ra_cross_t)
             + (rb_cross_t * b.inv_inertia).dot(rb_cross_t);
-        let lambda_t  = (-vt / eff_mass_t).clamp(-max_f, max_f);
-        let imp_t     = tangent * lambda_t;
+        if eff_mass_t < 1e-10 { continue; }
+        
+        let lambda_t = (-vt / eff_mass_t).clamp(-max_f, max_f);
+        let imp_t = tangent * lambda_t;
         a.apply_impulse( imp_t, c.point_a);
         b.apply_impulse(-imp_t, c.point_b);
     }
