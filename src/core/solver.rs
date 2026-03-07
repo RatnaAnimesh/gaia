@@ -266,21 +266,14 @@ impl PhysicsWorld {
                 let total_inv_mass = a.inv_mass + b.inv_mass;
                 if total_inv_mass == 0.0 { continue; }
 
-                // Positional push-out for any overlap
+                // Positional push-out: directly move bodies apart by the remaining depth.
+                // Split Impulse design: ONLY positions are corrected here.
+                // ALL velocity response (inelastic zeroing, restitution bounce) is handled
+                // exclusively by resolve_contact() in Step 4, never here.
                 if depth > 0.0 {
                     let correction = manifold.normal * (depth * BETA / total_inv_mass);
                     a.position += correction * a.inv_mass;
                     b.position -= correction * b.inv_mass;
-                }
-
-                // Velocity clamp: remove approach velocity even at depth=0 contact
-                // (prevents body gliding through surface when depth is exactly 0)
-                let vrel = a.velocity_at_point(manifold.point_a) - b.velocity_at_point(manifold.point_b);
-                let vn = vrel.dot(manifold.normal);
-                if vn < 0.0 {
-                    let impulse = manifold.normal * (-vn / total_inv_mass);
-                    a.velocity += impulse * a.inv_mass;
-                    b.velocity -= impulse * b.inv_mass;
                 }
             }
 

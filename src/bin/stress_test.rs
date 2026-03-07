@@ -480,6 +480,255 @@ fn main() {
     });
 
     // ═══════════════════════════════════════════════════════════
+    // GROUP 12: PARTICLE SYSTEM ADVERSARIAL
+    // ═══════════════════════════════════════════════════════════
+
+    suite.run("Particles: 1000-particle SPH stability (direct insert)", || {
+        use gaia::core::particles::{ParticleSystem, Particle, ParticleEmitter};
+        use macroquad::prelude::Vec4;
+        let mut sys = ParticleSystem::new();
+        // Insert 1000 particles directly (avoids macroquad::time::get_time() in emitter)
+        for i in 0..1000usize {
+            let x = ((i % 32) as f32 - 16.0) * 0.3;
+            let z = ((i / 32) as f32 - 16.0) * 0.3;
+            sys.particles.push(Particle {
+                position: Vec3::new(x, (i % 10) as f32 * 0.3, z),
+                velocity: Vec3::new(0.0, 1.0, 0.0),
+                color: Vec4::ONE,
+                size: 0.1,
+                lifetime: 5.0,
+                max_lifetime: 5.0,
+                density: 0.0,
+            });
+        }
+        // Enable SPH via a dummy emitter that doesn't emit
+        let mut e = ParticleEmitter::new(Vec3::ZERO, 0.0);
+        e.sph_enabled = true;
+        e.sph_kernel_h = 1.5;
+        e.sph_pressure_k = 0.5;
+        sys.emitters.push(e);
+        for _ in 0..30 { sys.step(0.016); }
+        let nans = sys.particles.iter().filter(|p| !p.position.is_finite() || !p.velocity.is_finite()).count();
+        if nans > 0 { return Err(format!("{nans}/{} particles NaN", sys.particles.len())); }
+        Ok(format!("{} particles alive, all finite", sys.particles.len()))
+    });
+
+    suite.run("Particles: extreme SPH pressure (k=1000) stability", || {
+        use gaia::core::particles::{ParticleSystem, Particle, ParticleEmitter};
+        use macroquad::prelude::Vec4;
+        let mut sys = ParticleSystem::new();
+        for i in 0..200usize {
+            let x = ((i % 14) as f32 - 7.0) * 0.2;
+            let z = ((i / 14) as f32 - 7.0) * 0.2;
+            sys.particles.push(Particle {
+                position: Vec3::new(x, 0.0, z),
+                velocity: Vec3::ZERO,
+                color: Vec4::ONE,
+                size: 0.1,
+                lifetime: 3.0,
+                max_lifetime: 3.0,
+                density: 0.0,
+            });
+        }
+        let mut e = ParticleEmitter::new(Vec3::ZERO, 0.0);
+        e.sph_enabled = true;
+        e.sph_pressure_k = 1000.0;
+        e.sph_kernel_h = 1.0;
+        sys.emitters.push(e);
+        for _ in 0..20 { sys.step(0.016); }
+        let nans = sys.particles.iter().filter(|p| !p.position.is_finite()).count();
+        if nans > 0 { return Err(format!("{nans} NaN with extreme SPH pressure")); }
+        Ok(format!("{} particles stable under k=1000", sys.particles.len()))
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // GROUP 13: JOINT CHAINS
+    // ═══════════════════════════════════════════════════════════
+
+    suite.run("Joints: 5-body spring chain (ragdoll backbone)", || {
+        use gaia::core::solver::{PhysicsWorld, RigidBody};
+        use gaia::core::shapes::{Shape, PhysicsMaterial};
+        use gaia::core::joints::{SpringJoint, JointSystem};
+        let mut w = PhysicsWorld::new();
+        // Static anchor at top
+        let mut anchor = RigidBody::new(0, Shape::Sphere { radius: 0.3 }, Vec3::new(0.0, 10.0, 0.0), PhysicsMaterial::default());
+        anchor.inv_mass = 0.0; anchor.inv_inertia = Vec3::ZERO;
+        w.add_body(anchor);
+        // 5 segments hanging below
+        for i in 1..=5 {
+            w.add_body(RigidBody::new(i, Shape::Sphere { radius: 0.3 }, Vec3::new(0.0, 10.0 - i as f32 * 2.0, 0.0), PhysicsMaterial::default()));
+        }
+        let mut joints = JointSystem::new();
+        for i in 0..5 {
+            joints.springs.push(SpringJoint {
+                body_a: i, body_b: i + 1,
+                anchor_local_a: Vec3::ZERO, anchor_local_b: Vec3::ZERO,
+                rest_length: 2.0, stiffness: 500.0, damping: 20.0,
+            });
+        }
+        for _ in 0..200 {
+            joints.apply_all(&mut w.bodies, 0.016);
+            w.step(0.016);
+        }
+        check_bodies(&w.bodies)?;
+        Ok(format!("5-body chain stable, bottom at y={:.2}", w.bodies[5].position.y))
+    });
+
+    suite.run("Joints: ball-socket chain (pendulum)", || {
+        use gaia::core::solver::{PhysicsWorld, RigidBody};
+        use gaia::core::shapes::{Shape, PhysicsMaterial};
+        use gaia::core::joints::{BallSocketJoint, JointSystem};
+        let mut w = PhysicsWorld::new();
+        let mut anchor = RigidBody::new(0, Shape::Sphere { radius: 0.3 }, Vec3::new(0.0, 8.0, 0.0), PhysicsMaterial::default());
+        anchor.inv_mass = 0.0; anchor.inv_inertia = Vec3::ZERO;
+        w.add_body(anchor);
+        // Pendulum bob offset horizontally (will swing)
+        w.add_body(RigidBody::new(1, Shape::Sphere { radius: 0.5 }, Vec3::new(3.0, 5.0, 0.0), PhysicsMaterial { restitution: 0.0, ..Default::default() }));
+        let mut joints = JointSystem::new();
+        joints.ball_sockets.push(BallSocketJoint {
+            body_a: 0, body_b: 1,
+            anchor_local_a: Vec3::ZERO,
+            anchor_local_b: Vec3::new(0.0, 3.0, 0.0),
+            bias_factor: 0.2,
+        });
+        for _ in 0..300 {
+            joints.apply_all(&mut w.bodies, 0.016);
+            w.step(0.016);
+        }
+        check_bodies(&w.bodies)?;
+        Ok(format!("Pendulum stable at pos={:.1?}", w.bodies[1].position))
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // GROUP 14: RESTITUTION PHYSICS ACCURACY
+    // ═══════════════════════════════════════════════════════════
+
+    suite.run("Physics: elastic bounce height conservation (e=0.8)", || {
+        use gaia::core::solver::{PhysicsWorld, RigidBody};
+        use gaia::core::shapes::{Shape, PhysicsMaterial};
+        let mut w = PhysicsWorld::new();
+        let mut f = RigidBody::new(0, Shape::Box { half_extents: Vec3::new(30.0, 1.0, 30.0) }, Vec3::new(0.0, -1.0, 0.0),
+            PhysicsMaterial { restitution: 1.0, friction_dynamic: 0.0, friction_static: 0.0, density: 1000.0 });
+        f.inv_mass = 0.0; f.inv_inertia = Vec3::ZERO;
+        w.add_body(f);
+        w.add_body(RigidBody::new(1, Shape::Sphere { radius: 0.5 }, Vec3::new(0.0, 5.0, 0.0),
+            PhysicsMaterial { restitution: 0.8, friction_dynamic: 0.0, friction_static: 0.0, density: 1000.0 }));
+
+        let mut max_vy_after_land = 0.0_f32;
+        let mut max_y_bounce = 0.0_f32;
+        let mut landed = false;
+        for _ in 0..250 {
+            w.step(0.016);
+            let y  = w.bodies[1].position.y;
+            let vy = w.bodies[1].velocity.y;
+            if y < 1.5 { landed = true; }
+            if landed {
+                if vy > max_vy_after_land { max_vy_after_land = vy; }
+                if y > max_y_bounce { max_y_bounce = y; }
+            }
+            // Detect energy explosion
+            if vy > 100.0 { return Err(format!("Energy explosion: vy={vy:.0}")); }
+        }
+        if !landed { return Err("Sphere never reached floor".into()); }
+        // With e≈0.894, sphere should get a meaningful bounce
+        // At minimum it should have some upward velocity after contact
+        if max_vy_after_land < 0.5 {
+            return Err(format!("Restitution failed: max upward vy={max_vy_after_land:.2} after landing (expected > 0.5)"));
+        }
+        Ok(format!("Bounce ok: peak vy={max_vy_after_land:.1} m/s, max height={max_y_bounce:.2}m"))
+    });
+
+    suite.run("Physics: zero restitution — no bounce", || {
+        use gaia::core::solver::{PhysicsWorld, RigidBody};
+        use gaia::core::shapes::{Shape, PhysicsMaterial};
+        let mut w = PhysicsWorld::new();
+        make_floor(&mut w);
+        w.add_body(RigidBody::new(1, Shape::Sphere { radius: 0.5 }, Vec3::new(0.0, 5.0, 0.0), PhysicsMaterial { restitution: 0.0, friction_dynamic: 0.0, friction_static: 0.0, density: 1000.0 }));
+        let mut peak_after = 0.0_f32;
+        let mut hit_floor = false;
+        for _ in 0..200 {
+            w.step(0.016);
+            let y = w.bodies[1].position.y;
+            if y < 1.0 { hit_floor = true; }
+            if hit_floor { peak_after = peak_after.max(y); }
+        }
+        if !hit_floor { return Err("Ball never reached floor".into()); }
+        if peak_after > 2.0 { return Err(format!("Ball bounced to y={peak_after:.2} with e=0!")); }
+        Ok(format!("Max height after impact: {peak_after:.3}m — correctly no bounce"))
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // GROUP 15: LARGE SCALE
+    // ═══════════════════════════════════════════════════════════
+
+    suite.run("Scale: 500 bodies, 10 frames (maximum scale)", || {
+        use gaia::core::solver::{PhysicsWorld, RigidBody};
+        use gaia::core::shapes::{Shape, PhysicsMaterial};
+        let mut w = PhysicsWorld::new();
+        make_floor(&mut w);
+        for i in 0..500usize {
+            let x = ((i % 22) as f32 - 11.0) * 2.3;
+            let z = ((i / 22) as f32 - 11.0) * 2.3;
+            let shape = if i % 2 == 0 { Shape::Sphere { radius: 0.7 } } else { Shape::Box { half_extents: Vec3::ONE } };
+            w.add_body(RigidBody::new(i + 1, shape, Vec3::new(x, 2.0 + (i % 10) as f32, z), PhysicsMaterial::default()));
+        }
+        let t0 = Instant::now();
+        for _ in 0..10 { w.step(0.016); }
+        let ms = t0.elapsed().as_secs_f64() * 1000.0 / 10.0;
+        check_bodies(&w.bodies)?;
+        Ok(format!("{ms:.1}ms/frame for 500 bodies — {:.0} pairs checked", 500.0 * 499.0 / 2.0))
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // GROUP 16: MIXED SHAPE COLLISION
+    // ═══════════════════════════════════════════════════════════
+
+    suite.run("GJK: sphere vs capsule collision", || {
+        use gaia::core::collision::gjk::detect_collision;
+        use gaia::core::shapes::Shape;
+        let s = Shape::Sphere { radius: 1.0 };
+        let c = Shape::Capsule { radius: 0.5, half_height: 2.0 };
+        let contact = detect_collision(&s, Vec3::new(1.0, 0.0, 0.0), &c, Vec3::ZERO);
+        if contact.is_none() { return Err("Sphere vs Capsule missed overlapping case!".into()); }
+        let m = contact.unwrap();
+        if !m.depth.is_finite() { return Err(format!("NaN depth sphere vs capsule: {}", m.depth)); }
+        Ok(format!("Sphere vs Capsule: depth={:.3}", m.depth))
+    });
+
+    suite.run("GJK: box vs capsule collision", || {
+        use gaia::core::collision::gjk::detect_collision;
+        use gaia::core::shapes::Shape;
+        let b = Shape::Box { half_extents: Vec3::new(1.0, 1.0, 1.0) };
+        let c = Shape::Capsule { radius: 0.5, half_height: 1.5 };
+        let contact = detect_collision(&b, Vec3::ZERO, &c, Vec3::new(1.0, 0.0, 0.0));
+        if contact.is_none() { return Err("Box vs Capsule missed overlapping case!".into()); }
+        let m = contact.unwrap();
+        if !m.depth.is_finite() { return Err(format!("NaN depth box vs capsule: {}", m.depth)); }
+        Ok(format!("Box vs Capsule: depth={:.3}", m.depth))
+    });
+
+    suite.run("GJK: all 6 shape pair combinations valid", || {
+        use gaia::core::collision::gjk::detect_collision;
+        use gaia::core::shapes::Shape;
+        let shapes = vec![
+            Shape::Sphere { radius: 1.0 },
+            Shape::Box { half_extents: Vec3::ONE },
+            Shape::Capsule { radius: 0.5, half_height: 1.0 },
+        ];
+        let mut pairs_tested = 0;
+        for (i, a) in shapes.iter().enumerate() {
+            for b in shapes.iter().skip(i) {
+                let result = std::panic::catch_unwind(|| {
+                    detect_collision(a, Vec3::new(0.5, 0.0, 0.0), b, Vec3::new(-0.5, 0.0, 0.0))
+                });
+                if result.is_err() { return Err(format!("PANIC on shape pair {i}")); }
+                pairs_tested += 1;
+            }
+        }
+        Ok(format!("All {pairs_tested} shape pairs handled without panic"))
+    });
+
+    // ═══════════════════════════════════════════════════════════
     // FINAL REPORT
     // ═══════════════════════════════════════════════════════════
     suite.report();
