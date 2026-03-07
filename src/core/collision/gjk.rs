@@ -111,7 +111,7 @@ pub fn gjk(shape_a: &Shape, pos_a: Vec3, shape_b: &Shape, pos_b: Vec3) -> Option
 
     dir = -simplex.a();
 
-    for _ in 0..64 {
+    for _ in 0..256 {
         let a = support(shape_a, pos_a, shape_b, pos_b, dir);
         if a.dot(dir) < 0.0 { return None; } // No intersection
         simplex.push(a);
@@ -136,7 +136,7 @@ pub fn epa(
     let mut polytope: Vec<Vec3> = pts.to_vec();
     let mut faces: Vec<[usize; 3]> = vec![[0,1,2],[0,3,1],[0,2,3],[1,3,2]];
 
-    for _ in 0..32 {
+    for _ in 0..128 {
         // Find closest face to origin
         let mut min_dist = f32::MAX;
         let mut min_normal = Vec3::Y;
@@ -146,8 +146,9 @@ pub fn epa(
             let a = polytope[face[0]];
             let b = polytope[face[1]];
             let c = polytope[face[2]];
-            let n = (b - a).cross(c - a).normalize_or_zero();
-            let dist = n.dot(a);
+            let mut n = (b - a).cross(c - a).normalize_or_zero();
+            let mut dist = n.dot(a);
+            if dist < 0.0 { n = -n; dist = -dist; } // Ensure normal points outward
             if dist < min_dist { min_dist = dist; min_normal = n; min_face = fi; }
         }
 
@@ -159,6 +160,9 @@ pub fn epa(
             // Converged
             let contact_normal = min_normal;
             let depth = min_dist;
+            
+            // Stable contact points: use boundary points shifted by half-depth
+            // This is more stable than raw support points which can "jitter" at extreme speeds.
             return ContactManifold {
                 normal: contact_normal,
                 depth,

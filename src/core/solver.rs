@@ -95,8 +95,7 @@ impl RigidBody {
         };
         let speed       = self.velocity.length();
         let travel      = speed * dt;
-        // At least 1 sub-step; never more than 64 (prevents freeze on near-zero radius)
-        let n_substeps  = ((travel / body_radius.max(0.01)).ceil() as usize).clamp(1, 64);
+        let n_substeps  = ((travel / body_radius.max(0.01)).ceil() as usize).clamp(1, 1024);
         let sub_dt      = dt / n_substeps as f32;
 
         for _ in 0..n_substeps {
@@ -204,8 +203,8 @@ impl PhysicsWorld {
                 };
                 let travel = b.velocity.length() * dt;
                 // Use 0.5× radius so there are always ≥2 sub-steps per radius of travel
-                // This guarantees the sphere can never jump over a surface in one sub-step.
-                ((travel / (r * 0.5).max(0.005)).ceil() as usize).clamp(1, 128)
+                // Cap sub-steps at 1024 (enough for Mach 10+, preventing hangs)
+                ((travel / (r * 0.5).max(0.005)).ceil() as usize).clamp(1, 1024)
             })
             .max().unwrap_or(1);
 
@@ -243,7 +242,7 @@ impl PhysicsWorld {
 
             // STEP 4: GRAPH-COLORED IMPULSE RESOLUTION
             let colors = color_pairs(&contacts, n);
-            for _ in 0..self.solver_iterations {
+            for _ in 0..40 {
                 for group in &colors {
                     for &pi in group {
                         let (i, j, ref manifold) = contacts[pi];
@@ -257,7 +256,7 @@ impl PhysicsWorld {
             // Directly push overlapping bodies apart. Also zero out approaching
             // velocity component so even depth=0 contacts don't let bodies pass through.
             const SLOP: f32 = 0.0;         // zero tolerance — catch even surface grazes
-            const BETA: f32 = 0.8;
+            const BETA: f32 = 0.5; // Smooth but firm positional recovery
             for &(i, j, ref manifold) in &contacts {
                 let depth = (manifold.depth - SLOP).max(0.0);
                 let (left, right) = self.bodies.split_at_mut(j);
@@ -289,10 +288,10 @@ fn resolve_contact(a: &mut RigidBody, b: &mut RigidBody, c: &ContactManifold, dt
     let vb   = b.velocity_at_point(c.point_b);
     let vrel = va - vb;
     let vn   = vrel.dot(c.normal);
-    if vn > 0.0 { return; }
+    if vn > 0.0 { return; } // already separating
 
     let e    = (a.material.restitution * b.material.restitution).sqrt();
-    let bias = 0.2 / dt * (c.depth - 0.01_f32).max(0.0);
+    let bias = 0.0; // Bias removed: positional correction is handled by Step 5 (Split Impulse)
 
     let ra_cross_n = ra.cross(c.normal);
     let rb_cross_n = rb.cross(c.normal);
