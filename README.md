@@ -71,4 +71,4 @@ gaia is licensed under the Apache License, Version 2.0. See LICENSE for details.
 
 ## Acknowledgments
 
-Developed by Animesh Ratna and the SAGE/Antigravity team. Inspired by the numerical rigour of MuJoCo and the modern architecture of the Rust physics ecosystem.
+Developed by Animesh Ratna. Inspired by the numerical rigour of MuJoCo and the modern architecture of the Rust physics ecosystem.
