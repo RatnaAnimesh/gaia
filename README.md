@@ -1,4 +1,4 @@
-# <p align="center"> gaia Physics Engine </p>
+# <p align="center"> gaia </p>
 
 <p align="center">
   <a href="https://github.com/ratnaanimesh/gaia/actions"><img src="https://github.com/ratnaanimesh/gaia/workflows/build/badge.svg" alt="Build Status"></a>
